@@ -177,6 +177,47 @@ internal sealed class FrenchTexts : Texts
         + (cutAt is int cut ? $" Coupé à {cut} caractères." : "");
     public override string PasteFailed(string error) => $"Collage interrompu : {error}";
 
+    public override string Audio => "Audio";
+    public override string AudioTooltip => "Son de l'iPhone sur ce PC, et micro de ce PC pour les appels (Bluetooth).";
+
+    public override string PhoneSoundTitle => "Son de l'iPhone sur ce PC";
+    public override string PhoneChoiceLabel => "iPhone";
+    public override string PhoneSoundOff => "Coupé.";
+    public override string PhoneSoundLooking => "Recherche de l'iPhone parmi les appareils Bluetooth…";
+    public override string PhoneSoundConnecting => "Connexion…";
+    public override string PhoneSoundOn => "Son actif.";
+    public override string PhoneSoundWaiting => "En attente : sur l'iPhone, ouvre Réglages › Bluetooth et touche ce PC.";
+    public override string PhoneSoundRefused(string reason) => $"Refusé : {reason}";
+    public override string RefusalNoAnswer => "l'iPhone ne répond pas en Bluetooth.";
+    public override string RefusalDenied(int? code) => $"Windows a refusé{Code(code)}. Le Bluetooth de ce PC est-il activé ?";
+    public override string RefusalNotPaired => "l'iPhone n'est plus appairé à ce PC.";
+    public override string RefusalFailed(int? code) => $"échec Bluetooth{Code(code)}.";
+    public override string PhoneSoundStillListening =>
+        "L'écoute continue : active Bluetooth dans les Réglages de l'iPhone (pas seulement le Centre de contrôle), puis touche ce PC dans Réglages › Bluetooth.";
+    public override string PhoneSoundNoPhone =>
+        "Aucun iPhone appairé en Bluetooth avec ce PC. Appaire-le d'abord dans les réglages Bluetooth de Windows.";
+    public override string PhoneSoundUnsupported => "Demande Windows 10 version 2004 ou plus récent.";
+    public override string PhoneSoundFailed(string error) => $"Connexion impossible : {error}";
+    public override string Retry => "Réessayer";
+    public override string BluetoothSettings => "Réglages Bluetooth…";
+    public override string SoundOutput(string? name) => name is null ? "Sortie : aucune" : $"Sortie : {name}";
+    public override string ChooseOutput => "Choisir la sortie…";
+    public override string ChooseOutputNote =>
+        "Windows joue ce son sur sa sortie par défaut. Choisis haut-parleurs ou casque dans cette page, ou change la sortie par défaut de Windows.";
+
+    public override string CallTitle => "Micro de ce PC pour les appels";
+    public override string CallMicrophoneLabel => "Micro";
+    public override string CallOutputLabel => "Entendre l'appel sur";
+    public override string CallHowTo => "Pendant un appel, choisis ce PC comme sortie audio sur l'iPhone, puis active.";
+    public override string CallWarning => "Pendant l'appel, l'iPhone utilise le micro de ce PC à la place du sien.";
+    public override string CallNoLink => "Aucun appel routé vers ce PC.";
+    public override string CallLinkReady => "Liaison mains-libres de l'iPhone présente.";
+    public override string CallStarting => "Démarrage…";
+    public override string CallRunning => "Actif : le micro de ce PC part vers l'iPhone, l'appel sort sur la sortie choisie.";
+    public override string CallStartFailed(string error) => $"Démarrage impossible : {error}";
+    public override string CallNoMicrophone => "Aucun micro sur ce PC.";
+    public override string SettingsPageFailed(string error) => $"Ouverture des réglages de Windows impossible : {error}";
+
     public override string DimGestureInvalid => "dimGesture attend cinq nombres — luminosité ignorée.";
     public override string OpeningControlCentre => "Ouverture du centre de contrôle…";
     public override string Dimming => "Baisse de la luminosité…";
@@ -199,6 +240,8 @@ internal sealed class FrenchTexts : Texts
         "fr" => "Langue de l'interface : français (enregistrée).",
         _ => "Langue de l'interface : celle de Windows (enregistrée).",
     };
+
+    private static string Code(int? code) => code is int c ? $" (0x{c:X8})" : "";
 
     private static string Size(int bytes) => bytes switch
     {

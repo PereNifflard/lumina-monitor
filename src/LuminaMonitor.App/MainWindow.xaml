@@ -383,6 +383,153 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
+
+                <Rectangle Width="1" Fill="{StaticResource GlassBorder}" Margin="5,8" />
+
+                <!-- Le son par Bluetooth. Un panneau plutot qu'un bouton de
+                     plus : deux interrupteurs et trois listes ne tiennent pas
+                     dans une barre. La pastille dit, panneau ferme, que le son
+                     du telephone passe (vert) ou attend (ambre). -->
+                <Button x:Name="AudioButton" Style="{StaticResource BarButton}"
+                        Click="OnAudioClicked">
+                    <StackPanel Orientation="Horizontal">
+                        <Grid>
+                            <TextBlock Text="&#xE767;" FontSize="14" VerticalAlignment="Center"
+                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
+                            <Ellipse x:Name="AudioDot" Width="7" Height="7" Margin="0,-3,-4,0"
+                                     HorizontalAlignment="Right" VerticalAlignment="Top"
+                                     Fill="{StaticResource SuccessPulse}" Visibility="Collapsed"
+                                     IsHitTestVisible="False" />
+                        </Grid>
+                        <TextBlock x:Name="AudioLabel" Margin="9,0,0,0"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- ================================================== Panneau Audio ===
+             Dans la fenetre et non dans un Popup : il se capture avec elle et
+             ne peut pas deriver d'un ecran a l'autre. Pose au-dessus de la
+             barre, pres du bouton qui l'ouvre ; ferme par un clic ailleurs,
+             Echap ou le bouton. Tant qu'il est ouvert, la souris ne prend pas
+             le telephone (voir OnMouseMove). Aucun texte ici : ApplyTexts et
+             RefreshAudioPanel les posent. -->
+        <Border x:Name="AudioPanel" Grid.Row="1" Visibility="Collapsed"
+                HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                Margin="12,0,12,6" MaxWidth="400" CornerRadius="16" Padding="18,14,18,16"
+                Background="#F7201F1F" BorderBrush="#29FFFFFF" BorderThickness="1">
+            <!-- Pas d'ombre portee : un effet sur un element pose sur la video
+                 se recompose a chaque image. Le liseré, plus marque que le
+                 verre ordinaire, detache le panneau a lui seul. -->
+            <StackPanel>
+                <!-- 1. Le son de l'iPhone, par A2DP. -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PhoneSoundTitle" FontSize="13.5" FontWeight="SemiBold"
+                               FontFamily="{StaticResource DisplayFont}" TextWrapping="Wrap"
+                               Foreground="{StaticResource OnSurface}" VerticalAlignment="Center" />
+                    <CheckBox x:Name="PhoneSoundSwitch" Grid.Column="1" Margin="12,0,0,0"
+                              Style="{StaticResource ToggleSwitch}"
+                              Checked="OnPhoneSoundSwitched" Unchecked="OnPhoneSoundSwitched" />
+                </Grid>
+
+                <Grid x:Name="PhoneChoiceRow" Margin="0,10,0,0" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PhoneChoiceLabel" FontSize="12" Margin="0,0,10,0"
+                               Foreground="{StaticResource OnSurfaceVariant}" VerticalAlignment="Center" />
+                    <ComboBox x:Name="PhoneChoice" Grid.Column="1" Style="{StaticResource PanelCombo}"
+                              SelectionChanged="OnPhoneChoiceChanged" />
+                </Grid>
+
+                <DockPanel Margin="0,9,0,0">
+                    <Ellipse x:Name="PhoneSoundDot" DockPanel.Dock="Left" Width="7" Height="7"
+                             Margin="1,5,9,0" VerticalAlignment="Top"
+                             Fill="{StaticResource OutlineVariant}" />
+                    <TextBlock x:Name="PhoneSoundState" FontSize="12.5" LineHeight="18" TextWrapping="Wrap"
+                               Foreground="{StaticResource OnSurface}" />
+                </DockPanel>
+                <TextBlock x:Name="PhoneSoundHint" FontSize="11.5" LineHeight="17" TextWrapping="Wrap"
+                           Margin="17,4,0,0" Foreground="{StaticResource Outline}" Visibility="Collapsed" />
+                <StackPanel x:Name="PhoneSoundActions" Orientation="Horizontal" Margin="17,9,0,0">
+                    <Button x:Name="PhoneSoundRetry" Style="{StaticResource PanelButton}"
+                            Click="OnPhoneSoundRetry" Visibility="Collapsed" Margin="0,0,8,0" />
+                    <Button x:Name="BluetoothSettingsButton" Style="{StaticResource PanelButton}"
+                            Click="OnBluetoothSettings" Visibility="Collapsed" />
+                </StackPanel>
+
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PhoneSoundOutput" FontSize="12" TextTrimming="CharacterEllipsis"
+                               Foreground="{StaticResource OnSurfaceVariant}" VerticalAlignment="Center" />
+                    <Button x:Name="ChooseOutputButton" Grid.Column="1" Margin="10,0,0,0"
+                            Style="{StaticResource PanelButton}" Click="OnChooseOutput" />
+                </Grid>
+                <TextBlock x:Name="ChooseOutputNote" FontSize="11" LineHeight="16" TextWrapping="Wrap"
+                           Margin="0,6,0,0" Foreground="{StaticResource Outline}" />
+
+                <Rectangle Height="1" Fill="{StaticResource GlassBorder}" Margin="0,14,0,12" />
+
+                <!-- 2. Le micro de ce PC pendant un appel, par le profil
+                     mains-libres. Jamais arme au demarrage. -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="CallTitle" FontSize="13.5" FontWeight="SemiBold"
+                               FontFamily="{StaticResource DisplayFont}" TextWrapping="Wrap"
+                               Foreground="{StaticResource OnSurface}" VerticalAlignment="Center" />
+                    <CheckBox x:Name="CallSwitch" Grid.Column="1" Margin="12,0,0,0"
+                              Style="{StaticResource ToggleSwitch}" IsEnabled="False"
+                              Checked="OnCallSwitched" Unchecked="OnCallSwitched" />
+                </Grid>
+                <TextBlock x:Name="CallHowTo" FontSize="11.5" LineHeight="17" TextWrapping="Wrap"
+                           Margin="0,6,0,0" Foreground="{StaticResource OnSurfaceVariant}" />
+
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock x:Name="CallMicrophoneLabel" FontSize="12" Margin="0,0,10,0"
+                               Foreground="{StaticResource OnSurfaceVariant}" VerticalAlignment="Center" />
+                    <ComboBox x:Name="CallMicrophone" Grid.Column="1" Style="{StaticResource PanelCombo}"
+                              SelectionChanged="OnCallDeviceChanged" />
+                    <TextBlock x:Name="CallOutputLabel" Grid.Row="1" FontSize="12" Margin="0,6,10,0"
+                               Foreground="{StaticResource OnSurfaceVariant}" VerticalAlignment="Center" />
+                    <ComboBox x:Name="CallOutput" Grid.Row="1" Grid.Column="1" Margin="0,6,0,0"
+                              Style="{StaticResource PanelCombo}"
+                              SelectionChanged="OnCallDeviceChanged" />
+                </Grid>
+
+                <DockPanel Margin="0,10,0,0">
+                    <TextBlock DockPanel.Dock="Left" Text="&#xE7BA;" FontSize="12" Margin="0,2,8,0"
+                               VerticalAlignment="Top" Foreground="{StaticResource Warn}"
+                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
+                    <TextBlock x:Name="CallWarning" FontSize="11.5" LineHeight="17" TextWrapping="Wrap"
+                               Foreground="{StaticResource Warn}" />
+                </DockPanel>
+                <DockPanel Margin="0,8,0,0">
+                    <Ellipse x:Name="CallDot" DockPanel.Dock="Left" Width="7" Height="7"
+                             Margin="1,5,9,0" VerticalAlignment="Top"
+                             Fill="{StaticResource OutlineVariant}" />
+                    <TextBlock x:Name="CallState" FontSize="12.5" LineHeight="18" TextWrapping="Wrap"
+                               Foreground="{StaticResource OnSurface}" />
+                </DockPanel>
             </StackPanel>
         </Border>
     </Grid>

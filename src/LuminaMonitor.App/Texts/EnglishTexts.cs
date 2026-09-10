@@ -181,6 +181,47 @@ internal sealed class EnglishTexts : Texts
         + (cutAt is int cut ? $" Cut at {cut} characters." : "");
     public override string PasteFailed(string error) => $"Paste stopped: {error}";
 
+    public override string Audio => "Audio";
+    public override string AudioTooltip => "iPhone sound on this PC, and this PC's microphone for calls (Bluetooth).";
+
+    public override string PhoneSoundTitle => "iPhone sound on this PC";
+    public override string PhoneChoiceLabel => "iPhone";
+    public override string PhoneSoundOff => "Off.";
+    public override string PhoneSoundLooking => "Looking for the iPhone among Bluetooth devices…";
+    public override string PhoneSoundConnecting => "Connecting…";
+    public override string PhoneSoundOn => "Sound active.";
+    public override string PhoneSoundWaiting => "Waiting: on the iPhone, open Settings › Bluetooth and tap this PC.";
+    public override string PhoneSoundRefused(string reason) => $"Refused: {reason}";
+    public override string RefusalNoAnswer => "the iPhone doesn't answer over Bluetooth.";
+    public override string RefusalDenied(int? code) => $"Windows said no{Code(code)}. Is this PC's Bluetooth on?";
+    public override string RefusalNotPaired => "the iPhone is no longer paired with this PC.";
+    public override string RefusalFailed(int? code) => $"Bluetooth failure{Code(code)}.";
+    public override string PhoneSoundStillListening =>
+        "Still listening: turn Bluetooth on in the iPhone's Settings (not only Control Center), then tap this PC in Settings › Bluetooth.";
+    public override string PhoneSoundNoPhone =>
+        "No iPhone paired with this PC over Bluetooth. Pair it in Windows's Bluetooth settings first.";
+    public override string PhoneSoundUnsupported => "Needs Windows 10 version 2004 or later.";
+    public override string PhoneSoundFailed(string error) => $"Couldn't connect: {error}";
+    public override string Retry => "Retry";
+    public override string BluetoothSettings => "Bluetooth settings…";
+    public override string SoundOutput(string? name) => name is null ? "Output: none" : $"Output: {name}";
+    public override string ChooseOutput => "Choose output…";
+    public override string ChooseOutputNote =>
+        "Windows plays this sound on its default output. Pick speakers or headphones on that page, or change Windows's default output.";
+
+    public override string CallTitle => "PC microphone for calls";
+    public override string CallMicrophoneLabel => "Microphone";
+    public override string CallOutputLabel => "Hear the call on";
+    public override string CallHowTo => "During a call, pick this PC as the audio output on the iPhone, then turn this on.";
+    public override string CallWarning => "During the call, the iPhone uses this PC's microphone instead of its own.";
+    public override string CallNoLink => "No call routed to this PC.";
+    public override string CallLinkReady => "The iPhone's hands-free link is here.";
+    public override string CallStarting => "Starting…";
+    public override string CallRunning => "On: this PC's microphone goes to the iPhone, the call plays on the chosen output.";
+    public override string CallStartFailed(string error) => $"Couldn't start: {error}";
+    public override string CallNoMicrophone => "No microphone on this PC.";
+    public override string SettingsPageFailed(string error) => $"Couldn't open Windows's settings: {error}";
+
     public override string DimGestureInvalid => "dimGesture needs five numbers — brightness left alone.";
     public override string OpeningControlCentre => "Opening Control Center…";
     public override string Dimming => "Lowering the brightness…";
@@ -203,6 +244,8 @@ internal sealed class EnglishTexts : Texts
         "fr" => "Interface language: French (saved).",
         _ => "Interface language: same as Windows (saved).",
     };
+
+    private static string Code(int? code) => code is int c ? $" (0x{c:X8})" : "";
 
     private static string Size(int bytes) => bytes switch
     {

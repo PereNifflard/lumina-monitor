@@ -303,6 +303,9 @@ public partial class MainWindow : Window
 
         _display.Tick += (_, _) => UpdateMetrics();
         _display.Start();
+
+        // Started and stopped by the Audio panel; idle otherwise.
+        _audioPoll.Tick += OnAudioPoll;
     }
 
     /// <summary>Reads <c>--diagnostic &lt;secondes&gt;</c>; zero means an ordinary run.</summary>
@@ -371,6 +374,10 @@ public partial class MainWindow : Window
         // developer image was unpacked.
         if (Settings.RescuedTo is string rescued)
             Report(t => t.SettingsUnreadable(rescued));
+
+        // Bluetooth, not the cable: the phone's sound comes back as it was left,
+        // whatever the session below is doing.
+        StartAudioAtLaunch();
 
         // A replay run never touches the cable: no multiplexer, no developer
         // image, no session. Everything above the depacketizer is the same code.
@@ -1729,6 +1736,7 @@ public partial class MainWindow : Window
         PasteLabel.Text = _pasting ? t.StopPasting : t.ToIPhone;
         FetchButton.ToolTip = t.FromIPhoneTooltip;
         FetchLabel.Text = t.FromIPhone;
+        ApplyAudioTexts(t);
 
         UpdateState();
     }
@@ -2071,6 +2079,7 @@ public partial class MainWindow : Window
             _settings.Save();
         }
 
+        ShutDownAudio();
         _watcher?.Dispose();
         var replay = _replay;
         _replay = null;
@@ -2313,36 +2322,38 @@ public partial class MainWindow : Window
                     break;
 
                 // Turned island-left: the phone's top points left, so its left
-                // edge became the bottom of the picture and the offsets run from
-                // the right.
+                // edge became the bottom of the picture — and the offsets run
+                // from the LEFT, where the top of the phone now is. They used to
+                // run from the right, which put the Action button at the far end
+                // of the picture from the island instead of beside it.
                 case DeviceGeometry.Orientation.IslandLeft:
                     outward = onLeft ? Outward.Down : Outward.Up;
                     Lay(shape, length, thickness,
-                        HorizontalAlignment.Right,
-                        onLeft ? VerticalAlignment.Bottom : VerticalAlignment.Top,
-                        onLeft ? new Thickness(0, 0, top, -proud)
-                               : new Thickness(0, -proud, top, 0));
-                    if (hit is not null)
-                        Lay(hit, length, hitThickness,
-                            HorizontalAlignment.Right,
-                            onLeft ? VerticalAlignment.Bottom : VerticalAlignment.Top,
-                            onLeft ? new Thickness(0, 0, top, -hitProud)
-                                   : new Thickness(0, -hitProud, top, 0));
-                    break;
-
-                default:   // IslandRight — the mirror image of the above
-                    outward = onLeft ? Outward.Up : Outward.Down;
-                    Lay(shape, length, thickness,
                         HorizontalAlignment.Left,
-                        onLeft ? VerticalAlignment.Top : VerticalAlignment.Bottom,
-                        onLeft ? new Thickness(top, -proud, 0, 0)
-                               : new Thickness(top, 0, 0, -proud));
+                        onLeft ? VerticalAlignment.Bottom : VerticalAlignment.Top,
+                        onLeft ? new Thickness(top, 0, 0, -proud)
+                               : new Thickness(top, -proud, 0, 0));
                     if (hit is not null)
                         Lay(hit, length, hitThickness,
                             HorizontalAlignment.Left,
+                            onLeft ? VerticalAlignment.Bottom : VerticalAlignment.Top,
+                            onLeft ? new Thickness(top, 0, 0, -hitProud)
+                                   : new Thickness(top, -hitProud, 0, 0));
+                    break;
+
+                default:   // IslandRight — the mirror image: offsets from the right, where the top is
+                    outward = onLeft ? Outward.Up : Outward.Down;
+                    Lay(shape, length, thickness,
+                        HorizontalAlignment.Right,
+                        onLeft ? VerticalAlignment.Top : VerticalAlignment.Bottom,
+                        onLeft ? new Thickness(0, -proud, top, 0)
+                               : new Thickness(0, 0, top, -proud));
+                    if (hit is not null)
+                        Lay(hit, length, hitThickness,
+                            HorizontalAlignment.Right,
                             onLeft ? VerticalAlignment.Top : VerticalAlignment.Bottom,
-                            onLeft ? new Thickness(top, -hitProud, 0, 0)
-                                   : new Thickness(top, 0, 0, -hitProud));
+                            onLeft ? new Thickness(0, -hitProud, top, 0)
+                                   : new Thickness(0, 0, top, -hitProud));
                     break;
             }
 
@@ -2932,6 +2943,10 @@ public partial class MainWindow : Window
         base.OnPreviewMouseDown(e);
         if (SideHint.Visibility == Visibility.Visible && _hintTimer.IsEnabled)
             HideSideButtonsHint();
+
+        // Likewise the Audio panel, closed by any press outside it.
+        if (AudioPanelPress(e))
+            e.Handled = true;
     }
 
     /// <summary>
@@ -2983,15 +2998,16 @@ public partial class MainWindow : Window
                 SideHint.VerticalAlignment = VerticalAlignment.Top;
                 SideHint.Margin = new Thickness(inset, Math.Max(0, middle - size.Height / 2), 0, 0);
                 break;
+            // Measured from whichever end the phone's top is, as ShapeButtons does.
             case DeviceGeometry.Orientation.IslandLeft:
-                SideHint.HorizontalAlignment = HorizontalAlignment.Right;
+                SideHint.HorizontalAlignment = HorizontalAlignment.Left;
                 SideHint.VerticalAlignment = VerticalAlignment.Bottom;
-                SideHint.Margin = new Thickness(0, 0, Math.Max(0, middle - size.Width / 2), inset);
+                SideHint.Margin = new Thickness(Math.Max(0, middle - size.Width / 2), 0, 0, inset);
                 break;
             default:
-                SideHint.HorizontalAlignment = HorizontalAlignment.Left;
+                SideHint.HorizontalAlignment = HorizontalAlignment.Right;
                 SideHint.VerticalAlignment = VerticalAlignment.Top;
-                SideHint.Margin = new Thickness(Math.Max(0, middle - size.Width / 2), inset, 0, 0);
+                SideHint.Margin = new Thickness(0, inset, Math.Max(0, middle - size.Width / 2), 0);
                 break;
         }
     }
@@ -3256,8 +3272,10 @@ public partial class MainWindow : Window
         double x = position.X / _scale;
         double y = position.Y / _scale;
 
-        // Outside the picture is the chassis, the floating bar or the desk.
-        bool inside = x >= 0 && y >= 0 && x < _pictureWidth && y < _pictureHeight;
+        // Outside the picture is the chassis, the floating bar or the desk. So
+        // is everything while the Audio panel is open: it lies over the
+        // picture, and hovering it must not take the mouse.
+        bool inside = !_audioPanelOpen && x >= 0 && y >= 0 && x < _pictureWidth && y < _pictureHeight;
         _pointerInside = inside;
         _mouseDirty = true;
         if (!inside)
@@ -3347,7 +3365,8 @@ public partial class MainWindow : Window
         Stage.Focus();
         e.Handled = true;
 
-        if (_surface is null || !Drivable)
+        // A press on the open Audio panel, between its controls.
+        if (_surface is null || !Drivable || _audioPanelOpen)
             return;
 
         // Only what lands on the picture drives the phone. The chassis carries
@@ -3507,6 +3526,15 @@ public partial class MainWindow : Window
         if (key == Key.F4 && !Keyboard.IsKeyDown(Key.LeftAlt) && !Keyboard.IsKeyDown(Key.RightAlt))
         {
             _ = FetchClipboardAsync();
+            e.Handled = true;
+            return;
+        }
+
+        // Escape closes the Audio panel. The panel is never open while
+        // driving — opening it hands the mouse back — so no Escape meant for
+        // the phone is lost here.
+        if (AudioPanelEscape(key))
+        {
             e.Handled = true;
             return;
         }

@@ -138,6 +138,156 @@
             <Setter Property="Foreground" Value="{StaticResource OnSurfaceVariant}" />
         </Style>
 
+        <!-- Bouton du panneau Audio : le meme verre, en plus petit. -->
+        <Style x:Key="PanelButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Padding" Value="11,5" />
+            <Setter Property="FontSize" Value="11.5" />
+        </Style>
+
+        <!-- Interrupteur : une case a cocher habillee. CheckBox et non
+             ToggleButton pour ce que l'accessibilite en dit (motif Toggle,
+             « case a cocher » pour un lecteur d'ecran). Le nom lisible est pose
+             par ApplyTexts, le titre de la section. -->
+        <Style x:Key="ToggleSwitch" TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Track" Width="36" Height="20" CornerRadius="10"
+                                Background="{StaticResource SurfaceHighest}"
+                                BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
+                            <Ellipse x:Name="Thumb" Width="12" Height="12" Margin="3,0,0,0"
+                                     HorizontalAlignment="Left" VerticalAlignment="Center"
+                                     Fill="{StaticResource Outline}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="{StaticResource PrimaryContainer}" />
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource PrimaryContainer}" />
+                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
+                                <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0" />
+                                <Setter TargetName="Thumb" Property="Fill" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource Outline}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource Primary}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.38" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Liste deroulante sombre. Le modele Aero2 peint un bouton gris clair
+             qui ne se reprend pas par une couleur : meme raison que pour Button,
+             le modele entier est donc reecrit. -->
+        <Style x:Key="PanelComboItem" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Item" Background="Transparent" CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Item" Property="Background" Value="#26A3C9FF" />
+                                <Setter Property="Foreground" Value="{StaticResource Primary}" />
+                            </Trigger>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Item" Property="Background" Value="{StaticResource GlassHover}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PanelCombo" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+            <Setter Property="FontFamily" Value="{StaticResource BodyFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource PanelComboItem}" />
+            <Setter Property="MaxDropDownHeight" Value="260" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="Toggle" Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Box" CornerRadius="8" BorderThickness="1"
+                                                Background="{StaticResource GlassSurface}"
+                                                BorderBrush="{StaticResource GlassBorder}">
+                                            <TextBlock Text="&#xE70D;" FontSize="10" Margin="0,0,10,0"
+                                                       HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource Outline}"
+                                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Box" Property="Background" Value="{StaticResource GlassHover}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter IsHitTestVisible="False" Margin="10,6,28,6"
+                                              HorizontalAlignment="Left" VerticalAlignment="Center"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}">
+                                <ContentPresenter.Resources>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    </Style>
+                                </ContentPresenter.Resources>
+                            </ContentPresenter>
+                            <Border x:Name="Focus" CornerRadius="8" BorderThickness="1"
+                                    BorderBrush="Transparent" IsHitTestVisible="False" />
+                            <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True"
+                                   Focusable="False" PopupAnimation="Fade"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}">
+                                <Border Margin="0,4,0,0" Padding="4" CornerRadius="8" BorderThickness="1"
+                                        Background="{StaticResource SurfaceHigh}"
+                                        BorderBrush="{StaticResource GlassBorder}"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        TextElement.FontFamily="{StaticResource BodyFont}">
+                                    <ScrollViewer>
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Focus" Property="BorderBrush" Value="{StaticResource Primary}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.38" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Bouton rond, pour la navigation de haut niveau. -->
         <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="Transparent" />

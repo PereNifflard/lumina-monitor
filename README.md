@@ -94,6 +94,9 @@ tunnel and the mirror on its own; the status bar reports where it stands.
 - **F2**: types the Windows clipboard onto the phone. (F2, not Ctrl+V: while
   in control, Ctrl+V would go to the phone, which expects Cmd+V.)
 - **F3**: counters (frames/s, latency, reports sent, errors).
+- **Audio** (bottom bar button): the iPhone's sound on the PC's speakers or
+  headphones, and the PC's microphone during a call, **over Bluetooth** —
+  iPhone paired with the PC; see [Installation](docs/INSTALLATION.md#audio-over-bluetooth).
 
 The interface follows the Windows display language (English or French) and
 can be forced in the settings.

@@ -13,8 +13,8 @@ namespace LuminaMonitor.App;
 /// the cable with Apple's own pairing record, so there is no token to lose —
 /// and the one field that can hold a secret, <see cref="UnlockCode"/>, is empty
 /// unless somebody puts their passcode in it on purpose. What remains is where
-/// the developer image was unpacked, which way up the window was left, and a
-/// few cosmetic choices.
+/// the developer image was unpacked, which way up the window was left, the
+/// audio choices, and a few cosmetic ones.
 /// </remarks>
 public sealed class Settings
 {
@@ -144,6 +144,45 @@ public sealed class Settings
     /// </remarks>
     [JsonPropertyName("chassisHintShown")]
     public bool ChassisHintShown { get; set; } = false;
+
+    /// <summary>
+    /// Play the iPhone's sound on this PC, over Bluetooth: the switch in the
+    /// Audio panel, remembered.
+    /// </summary>
+    /// <remarks>
+    /// Off by default. When on, the window opens the connection again at
+    /// start-up — a timed <c>--diagnostic</c> run excepted — and closes it on
+    /// the way out. See docs/BLUETOOTH_AUDIO.md.
+    /// </remarks>
+    [JsonPropertyName("phoneAudio")]
+    public bool PhoneAudio { get; set; } = false;
+
+    /// <summary>
+    /// Which paired phone the sound comes from, when Windows knows more than
+    /// one. Empty means the one named like the iPhone on the cable, else the
+    /// first.
+    /// </summary>
+    [JsonPropertyName("phoneAudioDevice")]
+    public string PhoneAudioDevice { get; set; } = "";
+
+    /// <summary>
+    /// The PC microphone sent to the iPhone during a call routed to this PC,
+    /// as a Windows endpoint id. Empty means Windows's default for calls.
+    /// </summary>
+    /// <remarks>
+    /// Only the choice is remembered, never the switch itself: the call bridge
+    /// takes over the phone's microphone, so it starts on an explicit click
+    /// during a call and at no other time.
+    /// </remarks>
+    [JsonPropertyName("callMicrophone")]
+    public string CallMicrophone { get; set; } = "";
+
+    /// <summary>
+    /// Where the other end of such a call is heard, as a Windows endpoint id.
+    /// Empty means Windows's default for calls.
+    /// </summary>
+    [JsonPropertyName("callOutput")]
+    public string CallOutput { get; set; } = "";
 
     /// <summary>Where the window was when it was last closed. Zero means centre it.</summary>
     [JsonPropertyName("windowBounds")]

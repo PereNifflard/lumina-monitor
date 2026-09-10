@@ -199,6 +199,48 @@ internal abstract class Texts
     public abstract string Pasted(int keystrokes, int skipped, int? cutAt);
     public abstract string PasteFailed(string error);
 
+    // --- Audio panel ------------------------------------------------------------------------------
+    // The command bar's Audio button and the panel it opens: the phone's sound
+    // over Bluetooth, and this PC's microphone for a call routed to it.
+
+    public abstract string Audio { get; }
+    public abstract string AudioTooltip { get; }
+
+    public abstract string PhoneSoundTitle { get; }
+    public abstract string PhoneChoiceLabel { get; }
+    public abstract string PhoneSoundOff { get; }
+    public abstract string PhoneSoundLooking { get; }
+    public abstract string PhoneSoundConnecting { get; }
+    public abstract string PhoneSoundOn { get; }
+    public abstract string PhoneSoundWaiting { get; }
+    public abstract string PhoneSoundRefused(string reason);
+    public abstract string RefusalNoAnswer { get; }
+    public abstract string RefusalDenied(int? code);
+    public abstract string RefusalNotPaired { get; }
+    public abstract string RefusalFailed(int? code);
+    public abstract string PhoneSoundStillListening { get; }
+    public abstract string PhoneSoundNoPhone { get; }
+    public abstract string PhoneSoundUnsupported { get; }
+    public abstract string PhoneSoundFailed(string error);
+    public abstract string Retry { get; }
+    public abstract string BluetoothSettings { get; }
+    public abstract string SoundOutput(string? name);
+    public abstract string ChooseOutput { get; }
+    public abstract string ChooseOutputNote { get; }
+
+    public abstract string CallTitle { get; }
+    public abstract string CallMicrophoneLabel { get; }
+    public abstract string CallOutputLabel { get; }
+    public abstract string CallHowTo { get; }
+    public abstract string CallWarning { get; }
+    public abstract string CallNoLink { get; }
+    public abstract string CallLinkReady { get; }
+    public abstract string CallStarting { get; }
+    public abstract string CallRunning { get; }
+    public abstract string CallStartFailed(string error);
+    public abstract string CallNoMicrophone { get; }
+    public abstract string SettingsPageFailed(string error);
+
     // --- Brightness -------------------------------------------------------------------------------
 
     public abstract string DimGestureInvalid { get; }
