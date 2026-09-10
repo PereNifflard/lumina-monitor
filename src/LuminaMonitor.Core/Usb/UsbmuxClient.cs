@@ -74,13 +74,13 @@ internal sealed class UsbmuxClient : IDisposable
         catch (OperationCanceledException)
         {
             client.Dispose();
-            throw new LuminaException("Le multiplexeur Apple ne répond plus : relance l'app Appareils Apple (ou rebranche le câble).")
+            throw new LuminaException(CoreTexts.Current.MultiplexerNotResponding)
                 { AppleMultiplexer = true };
         }
         catch (SocketException exception)
         {
             client.Dispose();
-            throw new LuminaException("Le multiplexeur Apple n'est pas lancé : ouvre l'app Appareils Apple ou branche l'iPhone.", exception)
+            throw new LuminaException(CoreTexts.Current.MultiplexerNotRunning, exception)
                 { AppleMultiplexer = true };
         }
         return new UsbmuxClient(client);

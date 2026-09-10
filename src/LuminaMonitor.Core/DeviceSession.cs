@@ -79,7 +79,7 @@ public sealed class DeviceSession : IAsyncDisposable
     public event Action<ReadOnlyMemory<byte>>? RtpPacket;
 
     /// <summary>Valid once <see cref="State"/> is <see cref="SessionState.MediaUp"/>.</summary>
-    public InputInjector Input => _input ?? throw new LuminaException("Session non connectee : appeler ConnectAsync d'abord.");
+    public InputInjector Input => _input ?? throw new LuminaException(CoreTexts.Current.NotConnected);
 
     /// <summary>How many soft resets this session has needed, for the window's counters.</summary>
     public int Resets => _resets;
@@ -266,9 +266,9 @@ public sealed class DeviceSession : IAsyncDisposable
 
     private async Task<XpcService> OpenPasteboardAsync()
     {
-        var rsd = _rsd ?? throw new LuminaException("Session non connectee : le presse-papiers passe par le tunnel.");
+        var rsd = _rsd ?? throw new LuminaException(CoreTexts.Current.ClipboardNeedsTunnel);
         if (!rsd.Services.ContainsKey(PasteboardService.ServiceName))
-            throw new LuminaException("Service presse-papiers absent de l'annuaire du telephone.");
+            throw new LuminaException(CoreTexts.Current.ClipboardServiceMissing);
         return await rsd.OpenAsync(PasteboardService.ServiceName);
     }
 
@@ -332,20 +332,20 @@ public sealed class DeviceSession : IAsyncDisposable
         _mux = await UsbmuxClient.ConnectAsync();
         var listing = await _mux.RequestAsync("ListDevices");
         if (listing.GetValueOrDefault("DeviceList") is not List<object> devices || devices.Count == 0)
-            throw new LuminaException("Aucun appareil attache.");
+            throw new LuminaException(CoreTexts.Current.NoDeviceAttached);
         var first = (Dictionary<string, object>)devices[0];
         long deviceId = (long)first["DeviceID"];
         var properties = first.GetValueOrDefault("Properties") as Dictionary<string, object>;
         string udid = properties?.GetValueOrDefault("SerialNumber")?.ToString()
-            ?? throw new LuminaException("Appareil sans UDID.");
+            ?? throw new LuminaException(CoreTexts.Current.DeviceWithoutUdid);
         Info($"Appareil usbmux #{deviceId}, UDID {DeviceInfo.Mask(udid)}.");
 
         var pairReply = await _mux.RequestAsync("ReadPairRecord",
             new Dictionary<string, object> { ["PairRecordID"] = udid });
         if (pairReply.GetValueOrDefault("PairRecordData") is not byte[] pairBytes)
-            throw new LuminaException("Appareil non appaire : ouvrir l'app Appareils Apple et repondre « Se fier a cet ordinateur ».");
+            throw new LuminaException(CoreTexts.Current.NotPaired);
         var pairDict = Plist.Read(pairBytes) as Dictionary<string, object>
-            ?? throw new LuminaException("Enregistrement d'appairage illisible.");
+            ?? throw new LuminaException(CoreTexts.Current.PairRecordUnreadable);
         var record = PairRecord.Parse(pairDict);
         Info($"Enregistrement d'appairage charge (HostID {pairDict["HostID"]}).");
         Enter(SessionState.Attached);
@@ -361,7 +361,7 @@ public sealed class DeviceSession : IAsyncDisposable
         var lockdown = new LockdownClient(await _lockdownPipe.ConnectToDeviceAsync(deviceId, LockdownPort));
         string? refusal = await lockdown.StartSessionAsync(record);
         if (refusal is not null)
-            throw new LuminaException($"StartSession refuse : {refusal}");
+            throw new LuminaException(CoreTexts.Current.StartSessionRefused(refusal));
         Device = new DeviceInfo(udid,
             await ValueAsync(lockdown, "DeviceName"),
             await ValueAsync(lockdown, "ProductType"),
@@ -374,8 +374,8 @@ public sealed class DeviceSession : IAsyncDisposable
         var amfi = await lockdown.GetValueRawAsync("DeveloperModeStatus", "com.apple.security.mac.amfi");
         object? developerMode = amfi.GetValueOrDefault("Value");
         if (developerMode is not true)
-            throw new LuminaException($"Mode developpeur inactif (DeveloperModeStatus = {developerMode ?? amfi.GetValueOrDefault("Error") ?? "?"})"
-                + " — Reglages > Confidentialite et securite > Mode developpeur.");
+            throw new LuminaException(CoreTexts.Current.DeveloperModeOff(
+                developerMode ?? amfi.GetValueOrDefault("Error") ?? "?"));
         Info("Mode developpeur actif.");
 
         // 3) The developer image, before the tunnel: the RSD directory only
@@ -384,7 +384,7 @@ public sealed class DeviceSession : IAsyncDisposable
         manager.UnlockRequired += message => UnlockRequired?.Invoke(message);
         var status = await manager.EnsureMountedAsync(_ddi, new LogProgress(_log), cancellation);
         if (status is not (DdiStatus.AlreadyMounted or DdiStatus.Mounted))
-            throw new LuminaException($"Image developpeur indisponible : {status}.");
+            throw new LuminaException(CoreTexts.Current.DdiUnavailable(status));
         Info(status == DdiStatus.AlreadyMounted ? "Image developpeur deja montee." : "*** IMAGE DEVELOPPEUR MONTEE ***");
         Enter(SessionState.DdiMounted);
 
@@ -406,7 +406,7 @@ public sealed class DeviceSession : IAsyncDisposable
         await _rsd.LoadAsync(handshake.ServerRsdPort);
         Info($"Annuaire : {_rsd.Services.Count} services.");
         if (!_rsd.Services.ContainsKey(HidReports.ServiceName))
-            throw new LuminaException("Service HID absent de l'annuaire : l'image developpeur n'est pas montee.");
+            throw new LuminaException(CoreTexts.Current.HidServiceMissing);
         Enter(SessionState.TunnelUp);
 
         // 5) The media stream that opens the HID gate, then the HID channel.
@@ -441,13 +441,9 @@ public sealed class DeviceSession : IAsyncDisposable
         {
             throw media.FailureCode switch
             {
-                9022 => new LuminaException(
-                    "Appel en cours sur l'iPhone : iOS interdit le miroir pendant un appel. L'image revient seule à la fin de l'appel.")
-                    { RetryAfterSeconds = 10 },
-                9021 => new LuminaException(
-                    "Le pilotage à distance demande iOS 27 ou plus sur l'iPhone."),
-                _ => new LuminaException(
-                    $"Le téléphone a refusé le flux vidéo{(media.FailureCode is int c ? $" (code {c})" : "")}."),
+                9022 => new LuminaException(CoreTexts.Current.CallInProgress) { RetryAfterSeconds = 10 },
+                9021 => new LuminaException(CoreTexts.Current.RemoteControlNeedsIos27),
+                _ => new LuminaException(CoreTexts.Current.StreamRefused(media.FailureCode)),
             };
         }
 
@@ -572,7 +568,7 @@ public sealed class DeviceSession : IAsyncDisposable
         if (_resets >= MaxResets)
         {
             Warn($"{MaxResets} relances du miroir sans succes : il n'y a plus rien a tenter d'ici.");
-            RestartRequired?.Invoke("Redemarre l'iPhone.");
+            RestartRequired?.Invoke(CoreTexts.Current.RestartIPhone);
             return false;
         }
         _resets++;
@@ -601,7 +597,7 @@ public sealed class DeviceSession : IAsyncDisposable
                 if (attempt == 0)
                 {
                     Info("iPhone VERROUILLE : le reset attend le deverrouillage (10 min max).");
-                    UnlockRequired?.Invoke("Deverrouille l'iPhone pour relancer le miroir");
+                    UnlockRequired?.Invoke(CoreTexts.Current.UnlockToRestartMirror);
                 }
                 else if (attempt % 20 == 0) Info($"  toujours verrouille ({attempt * 3} s)…");
                 if (attempt >= UnlockAttempts)

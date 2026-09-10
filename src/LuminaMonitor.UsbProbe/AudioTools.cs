@@ -432,7 +432,7 @@ internal static class AudioTools
     /// </summary>
     /// <remarks>
     /// The only honest way to reproduce what a killed run leaves on the phone.
-    /// Launch it, kill it — the process, not the founder's application — and
+    /// Launch it, kill it — the probe process, not the application someone is using — and
     /// then read <c>media-status</c>: whatever is still listed is what a crash
     /// costs, and on the audio side it is the microphone the person cannot use
     /// afterwards. The stream is left open on purpose, so this command is a

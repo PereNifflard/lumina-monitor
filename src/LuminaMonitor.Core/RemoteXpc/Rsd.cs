@@ -73,7 +73,7 @@ internal sealed class Rsd
     public async Task<RemoteXpc> OpenAsync(string name, Action<string>? log = null, TimeSpan? writePatience = null)
     {
         if (!_services.TryGetValue(name, out var entry))
-            throw new InvalidOperationException($"Service absent de l'annuaire : {name}");
+            throw new InvalidOperationException(CoreTexts.Current.ServiceMissing(name));
         var tcp = await _net.ConnectTcpAsync(entry.Port, writePatience);
         var xpc = new RemoteXpc(tcp) { Log = log };
         try

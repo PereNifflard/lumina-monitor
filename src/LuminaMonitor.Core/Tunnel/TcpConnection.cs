@@ -150,7 +150,7 @@ internal sealed class TcpConnection : Stream
         catch (OperationCanceledException)
         {
             Abort(new TimeoutException($"pas de SYN-ACK du port {RemotePort}"));
-            throw new TimeoutException($"Connexion TCP vers le port {RemotePort} : pas de reponse.");
+            throw new TimeoutException(CoreTexts.Current.TcpNoAnswer(RemotePort));
         }
         // The handshake wait is released empty when it fails, like every other
         // wait here, so the reason is read rather than caught.

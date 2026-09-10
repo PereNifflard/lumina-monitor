@@ -286,7 +286,7 @@ public sealed class InputInjector
     public async Task PressButtonAsync(string name)
     {
         if (!IndigoHid.Named.ContainsKey(name))
-            throw new LuminaException($"Bouton inconnu : {name} (attendu : {string.Join(", ", IndigoHid.Named.Keys)})");
+            throw new LuminaException(CoreTexts.Current.UnknownButton(name, string.Join(", ", IndigoHid.Named.Keys)));
         _indigo ??= await _rsd.OpenAsync(IndigoHid.ServiceName, writePatience: ChannelPatience);
         await IndigoHid.PressAsync(_indigo, name);
     }
@@ -590,7 +590,7 @@ public sealed class InputInjector
                     Forget(send);
                     Interlocked.Increment(ref _sendTimeouts);
                     Report(new LuminaException(
-                        $"canal HID bloque : un rapport n'est pas parti en {SendPatience.TotalMilliseconds:0} ms"));
+                        CoreTexts.Current.HidChannelStuck(SendPatience.TotalMilliseconds)));
                 }
                 catch (Exception exception)
                 {

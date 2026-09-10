@@ -1,249 +1,282 @@
-# Miroir vidéo USB — conception (étape 2)
+# USB video mirror — design (stage 2)
 
-Le téléphone envoie déjà son écran en RTP à travers notre pile UDP/IPv6, dès que la porte média est ouverte.
-Cette étape transforme ces paquets en images décodées, avec les seuls moyens de Windows (Media Foundation),
-sans bibliothèque tierce. Faits mesurés le 9 septembre 2026 (sonde `stream-info`, captures `scratchpad/ref/*.rtp`).
+**English** · [Français](VIDEO_DESIGN.fr.md)
 
-## Faits établis
+The phone already sends its screen as RTP through our UDP/IPv6 stack, as soon as the media gate is
+open. This stage turns those packets into decoded frames, using only Windows' own tools (Media
+Foundation), with no third-party library. Facts measured on 9 September 2026 (probe `stream-info`,
+captures `scratchpad/ref/*.rtp`).
 
-- **Les deux banques codec de `MediaOffer` sont nommées à l'envers.** Banque payload type **123** (features `FLS;SW:1`)
-  = **H.264/AVC** (charge RTP `3C 81 …` = FU-A type 28, RFC 6184). Banque **100** (`VRAE:0;SW:1;FLS`) = **HEVC**
-  (charge `62 01 81 …` = FU type 49, RFC 7798). Le téléphone prend la banque 100 (HEVC) quand les deux sont offertes.
-- Offre « banque 123 seule » → **H.264**, ~3,3 Mbit/s écran statique, plafond négocié 6 Mbit/s, 1328×2880, 60 fps annoncés,
-  NV12, SRTP désactivé (flux en clair), `KeyFrameInterval = 0` : **une seule image clé, au tout début**.
-- En-tête RTP : version 2, extension présente (profil 0x9001, 1 mot de 32 bits) — à sauter avant la charge.
-- **RTCP** : le téléphone envoie un SR (PT 200) chaque seconde, multiplexé sur le même port UDP que le RTP
-  (`RTCPSendInterval = 1`, `RTCPTimeoutInterval = 20`). **Sans rapport de réception de notre part, le flux s'arrête
-  après 20 s** (mesuré : 7095 paquets en 35 s ≈ 19,4 s de flux, 20 SR reçus). Il faut donc émettre un RR toutes les secondes.
-- HEVC porte un suffixe propriétaire par NAL de tranche (`04 f0 0a c0 00 00 03 00 00 04 ec 0a b0 03`, référence pymobiledevice3) ;
-  vérifier si H.264 en porte un et le retirer le cas échéant.
+## Established facts
 
-## Décisions
+- **`MediaOffer`'s two codec banks are named backwards.** Bank payload type **123** (features
+  `FLS;SW:1`) = **H.264/AVC** (RTP payload `3C 81 …` = FU-A type 28, RFC 6184). Bank **100**
+  (`VRAE:0;SW:1;FLS`) = **HEVC** (payload `62 01 81 …` = FU type 49, RFC 7798). The phone picks
+  bank 100 (HEVC) when both are offered.
+- Offer "bank 123 only" → **H.264**, ~3.3 Mbit/s on a static screen, negotiated cap 6 Mbit/s,
+  1328×2880, 60 fps advertised, NV12, SRTP disabled (stream in the clear), `KeyFrameInterval = 0`:
+  **a single key frame, right at the start**.
+- RTP header: version 2, extension present (profile 0x9001, one 32-bit word) — to be skipped before
+  the payload.
+- **RTCP**: the phone sends an SR (PT 200) every second, multiplexed on the same UDP port as the
+  RTP (`RTCPSendInterval = 1`, `RTCPTimeoutInterval = 20`). **With no receiver report from our
+  side, the stream stops after 20 s** (measured: 7095 packets in 35 s ≈ 19.4 s of stream, 20 SR
+  received). An RR therefore has to be sent every second.
+- HEVC carries a proprietary suffix on every slice NAL (`04 f0 0a c0 00 00 03 00 00 04 ec 0a b0
+  03`, reference: pymobiledevice3); check whether H.264 carries one too and strip it if so.
 
-1. **H.264 uniquement** : décodeur Media Foundation présent sur tout Windows 10/11 ; HEVC dépend d'une extension Store.
-   `DeviceSession` offre donc la banque 123 seule. Renommer dans `MediaOffer` : `AvcFeatures = "FLS;SW:1;"` (PT 123),
-   `HevcFeatures = "FLS;VRAE:0;SW:1;"` (PT 100), enum `VideoCodecs` corrigée ; `SelfCheck` (gabarit Xcode, banques 123 puis 100)
-   doit rester identique octet pour octet.
-2. **Pipeline** dans `LuminaMonitor.Core/Media/` :
-   - `RtpPacket` (parse en-tête, CSRC, extension, marker, seq, timestamp, SSRC, charge) ; RTCP reconnu par PT 200–206.
-   - `H264Depacketizer` (RFC 6184) : NAL simple (1–23), STAP-A (24), FU-A (28) ; réassemblage par seq ; une **unité d'accès**
-     par marker ; format Annex B (`00 00 00 01` + NAL) ; SPS/PPS gardés et réinjectés devant chaque IDR ; tout jeter jusqu'au
-     premier IDR ; détecter perte (saut de seq) → marquer l'unité d'accès corrompue et demander une image clé.
-   - `RtcpSession` : parse SR/SDES/BYE ; envoie chaque seconde un RR (PT 201, SSRC de l'émetteur, fraction perdue, jitter,
-     LSR/DLSR) + SDES CNAME, vers l'adresse/port d'où viennent les SR (mux). Envoie un **PLI** (PT 206, FMT 1) ou **FIR**
-     (FMT 4) à la demande (perte, ou abonné tardif). Vérifier sur le téléphone que le flux dépasse 20 s avec RR, et qu'un PLI
-     provoque bien une nouvelle image clé (SPS/PPS/IDR).
-   - `H264Decoder` : Media Foundation, `CLSID_CMSH264DecoderMFT`, interop COM écrit à la main (`IMFTransform`, `IMFMediaType`,
-     `IMFSample`, `IMFMediaBuffer`, `MFStartup`), entrée `MFVideoFormat_H264` Annex B, sortie **NV12**, `CODECAPI_AVLowLatencyMode = 1`,
-     gestion de `MF_E_TRANSFORM_STREAM_CHANGE` (taille) ; un thread de décodage, file bornée (abandon des unités en retard).
-   - `Nv12ToBgra` (SIMD `System.Numerics`/`Vector`) → `VideoFrame(width, height, stride, byte[] Bgra, timestamp)`.
-   - `MediaSession` : arme la réception **avant** `startmediastream` (aucun paquet initial perdu), expose `FrameDecoded`
-     (VideoFrame), `RtpPacket` (brut), statistiques (pps, fps, pertes, retard de décodage), `RequestKeyFrameAsync()`.
-3. **Outils de sonde** : `stream-info` capture dès l'armement (avant le démarrage) ; `decode-capture <fichier.rtp> <n> <sortie.bmp>`
-   rejoue une capture hors ligne, décode, écrit la n-ième image en BMP 24 bits (écrit à la main, sans System.Drawing) et affiche
-   le débit de décodage (images/s) ; `mirror-test [secondes]` sur le téléphone : session complète, décodage en direct,
-   compte les images et écrit la dernière en BMP.
+## Decisions
 
-## Ce que l'étape 2 a mesuré (9 septembre 2026, capture `capture_h264_start.rtp`)
+1. **H.264 only**: the Media Foundation decoder is present on every Windows 10/11 install; HEVC
+   depends on a Store extension. `DeviceSession` therefore offers bank 123 alone. Rename in
+   `MediaOffer`: `AvcFeatures = "FLS;SW:1;"` (PT 123), `HevcFeatures = "FLS;VRAE:0;SW:1;"` (PT 100),
+   fixed `VideoCodecs` enum; `SelfCheck` (Xcode template, banks 123 then 100) must stay identical
+   byte for byte.
+2. **Pipeline** under `LuminaMonitor.Core/Media/`:
+   - `RtpPacket` (parses header, CSRC, extension, marker, seq, timestamp, SSRC, payload); RTCP is
+     recognised by PT 200–206.
+   - `H264Depacketizer` (RFC 6184): single NAL (1–23), STAP-A (24), FU-A (28); reassembly by seq;
+     one **access unit** per marker; Annex B format (`00 00 00 01` + NAL); SPS/PPS kept and
+     re-injected before every IDR; everything discarded up to the first IDR; loss detection (seq
+     gap) → mark the access unit corrupt and request a key frame.
+   - `RtcpSession`: parses SR/SDES/BYE; sends an RR every second (PT 201, sender's SSRC, fraction
+     lost, jitter, LSR/DLSR) + SDES CNAME, to the address/port the SRs come from (mux). Sends a
+     **PLI** (PT 206, FMT 1) or **FIR** (FMT 4) on demand (loss, or a late subscriber). Verify on
+     the phone that the stream lasts beyond 20 s with RRs, and that a PLI does trigger a new key
+     frame (SPS/PPS/IDR).
+   - `H264Decoder`: Media Foundation, `CLSID_CMSH264DecoderMFT`, hand-written COM interop
+     (`IMFTransform`, `IMFMediaType`, `IMFSample`, `IMFMediaBuffer`, `MFStartup`), input
+     `MFVideoFormat_H264` Annex B, output **NV12**, `CODECAPI_AVLowLatencyMode = 1`, handling of
+     `MF_E_TRANSFORM_STREAM_CHANGE` (size); one decode thread, bounded queue (late units dropped).
+   - `Nv12ToBgra` (SIMD `System.Numerics`/`Vector`) → `VideoFrame(width, height, stride, byte[]
+     Bgra, timestamp)`.
+   - `MediaSession`: arms reception **before** `startmediastream` (no initial packet lost),
+     exposes `FrameDecoded` (VideoFrame), `RtpPacket` (raw), statistics (pps, fps, losses, decode
+     lag), `RequestKeyFrameAsync()`.
+3. **Probe tools**: `stream-info` captures from the moment it is armed (before the start);
+   `decode-capture <file.rtp> <n> <output.bmp>` replays a capture offline, decodes it, writes the
+   n-th frame as a 24-bit BMP (written by hand, no `System.Drawing`) and reports decode throughput
+   (frames/s); `mirror-test [seconds]` on the phone: a full session, live decode, counts the frames
+   and writes the last one as a BMP.
 
-- **Les jeux de paramètres ne sont pas en bande.** Le tout premier paquet RTP (138 octets, bit *forbidden* à 1,
-  donc jamais une NAL) est une entrée d'échantillon ISO `avc1` contenant une boîte `avcC` : profil 0x64, niveau 51,
-  **SPS** `27 64 00 33 4B 04 C5 14 05 30 16 BA 6E 04 04 04 04` et **PPS** `28 4A E3 CB`. L'entrée donne aussi la
-  géométrie : **1328 × 2896** (et non 2880). Un récepteur qui ignore ce paquet a une IDR indécodable.
-- Le paquet suivant ouvre l'IDR en FU-A (`3C 85`), 33 paquets, 37 645 octets ; ensuite une image P par unité d'accès.
-- **Suffixe propriétaire en H.264 : 10 octets, `00 00 03 00 00 05 28 0B 34 02`**, présent sur *toutes* les NAL de
-  tranche (IDR comprise), identique d'une session à l'autre — l'analogue du suffixe HEVC de 14 octets, pas le même motif.
-- **RTCP : le PT occupe les 8 bits du deuxième octet.** Masquer par 0x7F transforme un SR (200) en PT 72 et livre le
-  paquet de contrôle au dépaquetiseur, dont le champ longueur se lit comme un numéro de séquence délirant.
-- Avec un RR + SDES par seconde vers le `SourcePort` de la réponse, le flux tient : 60 s, 4143 paquets, 60 SR reçus,
-  0 perte, 3520 images décodées (58,6 img/s), latence dernier paquet → image décodée ≈ 0,4 ms.
-- Le décodeur MFT réutilise notre tampon de sortie : **il faut remettre `SetCurrentLength(0)` avant chaque
-  `ProcessOutput`**, sinon le deuxième appel répond un E_FAIL nu.
+## What stage 2 measured (9 September 2026, capture `capture_h264_start.rtp`)
 
-## Étape 3 — le retard proportionnel au mouvement (outillage, 9 septembre 2026)
+- **Parameter sets are not in-band.** The very first RTP packet (138 bytes, *forbidden* bit set to
+  1, hence never a NAL) is an ISO `avc1` sample entry containing an `avcC` box: profile 0x64,
+  level 51, **SPS** `27 64 00 33 4B 04 C5 14 05 30 16 BA 6E 04 04 04 04` and **PPS**
+  `28 4A E3 CB`. The entry also gives the geometry: **1328 × 2896** (not 2880). A receiver that
+  ignores this packet gets an undecodable IDR.
+- The next packet opens the IDR in FU-A (`3C 85`), 33 packets, 37,645 bytes; a P frame per access
+  unit follows.
+- **Proprietary H.264 suffix: 10 bytes, `00 00 03 00 00 05 28 0B 34 02`**, present on *every*
+  slice NAL (IDR included), identical from session to session — the counterpart to the 14-byte
+  HEVC suffix, though not the same pattern.
+- **RTCP: the PT occupies all 8 bits of the second byte.** Masking with 0x7F turns an SR (200)
+  into PT 72 and hands the control packet to the depacketizer, whose length field then reads as an
+  insane sequence number.
+- With an RR + SDES sent every second to the response's `SourcePort`, the stream holds: 60 s, 4143
+  packets, 60 SR received, 0 loss, 3520 frames decoded (58.6 fps), last-packet-to-decoded-frame
+  latency ≈ 0.4 ms.
+- The MFT decoder reuses our output buffer: **`SetCurrentLength(0)` must be called before every
+  `ProcessOutput`**, or the second call returns a bare E_FAIL.
 
-Hypothèse : le miroir prend du retard **en proportion de ce qui bouge à l'écran**, parce que l'encodeur du
-téléphone, plafonné vers 6 Mbit/s, met les images en file quand la scène change beaucoup. Le transport (RTT
-1 ms) et le décodage (< 1 ms) sont déjà hors de cause, donc la mesure porte sur la seule chose qu'ils
-n'expliquent pas : l'écart entre l'instant où une image a été prise, que dit son horodatage RTP, et celui où
-elle arrive.
+## Stage 3 — lag proportional to motion (tooling, 9 September 2026)
 
-- **`motion-test [secondes] [default|half|bitrate:N|rctl]`** (sonde) : session complète avec décodage, 3 s de
-  repos, N s de glisser vertical continu au centre (600 px en 500 ms, aller-retour sans pause, 120 positions/s
-  par la file de l'injecteur), 3 s de repos. Une ligne par seconde : paquets/s, kbit/s, images reçues et
-  décodées, taille moyenne et maximale d'une image, **dérive** (temps écoulé chez nous moins temps écoulé selon
-  les horodatages, tous deux comptés depuis la première image), gigue, pertes, et l'écart entre l'horodatage de
-  la dernière image et maintenant. Bilan : dérive maximale au repos contre sous mouvement. Une dérive qui monte
-  de plusieurs centaines de ms sous mouvement et retombe au repos = file dans l'encodeur du téléphone.
-- **Ce que l'offre permet vraiment.** Le schéma `VCMediaNegotiationBlobVideoSettings` ne contient que deux
-  champs de résolution, `f4 customVideoWidth` et `f5 customVideoHeight`, tous deux **absents de la capture
-  Xcode** : `VideoOfferOptions.MaxWidth/MaxHeight` les émet, la réaction du téléphone est inconnue. Les
-  `ResEntry` des banques de codec ne sont **pas** une table de résolutions (même identifiant de capacité 50115
-  partout). Il n'existe **aucun** champ de débit maximal : seulement la table de paliers `f9`, dont les entrées
-  de type 0 sont des plafonds réseau de 6 à 100 Mbit/s ; `MaxBitrateKbps` élague cette table. Il n'existe
-  **aucun** champ de cadence d'images — d'où l'absence de `FramerateCap`.
-- **RCTL** (`RctlFeedback`, dans `RtcpSession.cs`, désactivé par défaut) : le canal privé qu'utilise le miroir
-  de Xcode, deux paquets RTCP APP (PT 204) — un reçu de 16 octets par image, envoyé sur le bit *marker*, et un
-  rapport « RCTL » de 32 octets vingt fois par seconde dont le demi-mot bas du dernier mot porte la borne de
-  débit en kbit/s. Format et cadences repris de la capture ; la lecture des quatre mots et l'identification de
-  la borne sont documentées avec leur degré de certitude dans le fichier.
-- L'offre par défaut reste **identique octet pour octet** au gabarit Xcode (`offer-check`).
+Hypothesis: the mirror falls behind **in proportion to how much moves on screen**, because the
+phone's encoder, capped around 6 Mbit/s, queues up frames when the scene changes a lot. Transport
+(1 ms RTT) and decoding (< 1 ms) are already ruled out, so the measurement targets the one thing
+they cannot explain: the gap between the instant a frame was captured — its RTP timestamp says —
+and the instant it arrives.
+
+- **`motion-test [seconds] [default|half|bitrate:N|rctl]`** (probe): a full session with decode,
+  3 s at rest, N s of continuous vertical dragging at the centre (600 px in 500 ms, back and forth
+  with no pause, 120 positions/s from the injector's queue), 3 s at rest. One line per second:
+  packets/s, kbit/s, frames received and decoded, average and maximum frame size, **drift**
+  (elapsed time on our side minus elapsed time per the timestamps, both counted from the first
+  frame), jitter, losses, and the gap between the last frame's timestamp and now. Result: maximum
+  drift at rest versus under motion. Drift climbing by several hundred ms under motion and falling
+  back at rest = a queue inside the phone's encoder.
+- **What the offer actually controls.** The `VCMediaNegotiationBlobVideoSettings` schema only has
+  two resolution fields, `f4 customVideoWidth` and `f5 customVideoHeight`, both **absent from the
+  Xcode capture**: `VideoOfferOptions.MaxWidth/MaxHeight` do send them, the phone's reaction is
+  unknown. The codec banks' `ResEntry` entries are **not** a resolution table (same capability id
+  50115 everywhere). There is **no** maximum-bitrate field at all: only the tier table `f9`, whose
+  type-0 entries are network caps from 6 to 100 Mbit/s; `MaxBitrateKbps` trims this table. There
+  is **no** frame-rate field either — hence no `FramerateCap`.
+- **RCTL** (`RctlFeedback`, in `RtcpSession.cs`, disabled by default): the private channel used by
+  Xcode's mirror, two RTCP APP packets (PT 204) — a 16-byte one received per frame, sent on the
+  *marker* bit, and a 32-byte "RCTL" report twenty times a second whose last word's low half-word
+  carries the bitrate ceiling in kbit/s. Format and cadences taken from the capture; the reading of
+  the four words and the identification of the ceiling are documented, with their confidence level,
+  in the file.
+- The default offer stays **identical, byte for byte**, to the Xcode template (`offer-check`).
 
 
-## Étape 4 — la latence absolue : mesure et réglages (9 septembre 2026)
+## Stage 4 — absolute latency: measurement and tuning (9 September 2026)
 
-La dérive ne voit que les **variations** du retard ; elle est plate à ±30 ms alors que le miroir accuse
-plus d'une seconde de retard absolu. Deux instruments ont été ajoutés pour voir le retard lui-même.
+Drift only sees **variations** in the lag; it stays flat at ±30 ms while the mirror runs more than
+a second behind in absolute terms. Two instruments were added to see the lag itself.
 
-- **`clock-test [secondes] [--variant=…] [--out=<dossier>]`** (sonde) : le téléphone affiche une horloge
-  juste (Safari sur time.is, NTP), la sonde décime chaque image décodée au quart, cherche pendant 2,5 s la
-  **bande horizontale la plus changeante** — les grands chiffres sont la seule chose qui change une fois par
-  seconde sur une page immobile — puis déclenche sur chaque changement de seconde, écrit l'image en BMP et
-  la bande en PNG, nommées par l'**heure PC du dernier paquet** de cette image. Quand l'affichage bascule
-  sur `X`, l'heure vraie du téléphone est `X`,000 : **latence = heure PC de la transition − X,000**. Contrôle
-  intégré : les intervalles entre transitions doivent valoir 1000 ms.
-- **`RtcpSession.PipelineMs`** : le rapport d'émission RTCP publie le couple (horloge du téléphone, horodatage
-  média correspondant), ce qui donne l'heure du téléphone pour n'importe quel horodatage RTP et donc le retard
-  **horodatage → arrivée**. L'horloge que le téléphone y met n'est pas l'heure murale (elle est décalée d'une
-  constante, ~4 h 31 dans cette campagne), donc la valeur absolue ne veut rien dire ; ses **différences** sont
-  justes au millième et c'est ce qui sert à comparer les variantes.
+- **`clock-test [seconds] [--variant=…] [--out=<folder>]`** (probe): the phone displays an accurate
+  clock (Safari on time.is, NTP), the probe decimates every decoded frame to a quarter, spends
+  2.5 s looking for the **most-changing horizontal band** — the big digits are the only thing that
+  changes once a second on an otherwise still page — then triggers on every second change, writes
+  the frame as BMP and the band as PNG, named by the **PC time of that frame's last packet**. When
+  the display flips to `X`, the phone's true time is `X`.000: **latency = PC time of the
+  transition − X.000**. Built-in check: the intervals between transitions must equal 1000 ms.
+- **`RtcpSession.PipelineMs`**: the RTCP sender report publishes the pair (phone clock, matching
+  media timestamp), which gives the phone's time for any RTP timestamp and therefore the
+  **timestamp-to-arrival** lag. The clock the phone puts there is not wall time (it is offset by a
+  constant, ~4 h 31 in this campaign), so the absolute value is meaningless; its **differences**
+  are accurate to the millisecond, and that is what is used to compare variants.
 
-### Ce que la mesure dit
+### What the measurement says
 
-| Levier essayé | Effet sur la latence |
+| Lever tried | Effect on latency |
 | --- | --- |
-| `default` (négociation Xcode, sans RCTL) | 1,55 – 1,78 s (5 sessions) |
-| boucle RCTL, borne 2000 / 4000 / 6000 / 60001 kbit/s | 1,71 – 1,75 s — aucun effet |
-| w4 sur l'horloge média (OWRD ≈ 0) vs sur une montre à nous | aucun effet |
-| rapports RCTL à 60 Hz au lieu de 20 Hz | aucun effet |
-| `AVCMediaStreamNegotiatorAccessNetworkType` 0, 1, 2, 3 | aucun effet (1,72 s à 0 comme à 1) |
-| `AVCMediaStreamNegotiatorTransportProtocolType` 0, 1, 2, 3 | aucun effet |
-| `clientSupportedFeatures` 0, 140, 141, 255 | aucun effet (0 et 255 acceptés comme 140) |
-| `ltrpEnabled`, `fecEnabled=0`, `allowRTCPFB`, `tilesPerFrame=4` | acceptés, aucun effet |
-| `endpoint:Mac16,11` au lieu de `Mac15,9` | accepté, aucun effet |
-| `customVideoWidth/Height` (664×1448), paliers ≤ 2000 kbit/s | aucun effet (1,68 / 1,71 s) |
-| **un tap sur l'écran du téléphone** | **1,70 s → 1,00 s**, puis remontée en ~2 min |
+| `default` (Xcode negotiation, no RCTL) | 1.55 – 1.78 s (5 sessions) |
+| RCTL loop, cap at 2000 / 4000 / 6000 / 60001 kbit/s | 1.71 – 1.75 s — no effect |
+| w4 on the media clock (OWRD ≈ 0) vs. on our own clock | no effect |
+| RCTL reports at 60 Hz instead of 20 Hz | no effect |
+| `AVCMediaStreamNegotiatorAccessNetworkType` 0, 1, 2, 3 | no effect (1.72 s at 0 as at 1) |
+| `AVCMediaStreamNegotiatorTransportProtocolType` 0, 1, 2, 3 | no effect |
+| `clientSupportedFeatures` 0, 140, 141, 255 | no effect (0 and 255 accepted like 140) |
+| `ltrpEnabled`, `fecEnabled=0`, `allowRTCPFB`, `tilesPerFrame=4` | accepted, no effect |
+| `endpoint:Mac16,11` instead of `Mac15,9` | accepted, no effect |
+| `customVideoWidth/Height` (664×1448), tiers ≤ 2000 kbit/s | no effect (1.68 / 1.71 s) |
+| **a tap on the phone's screen** | **1.70 s → 1.00 s**, then climbing back over ~2 min |
 
-Le `streamConfig` renvoyé est **identique** pour toutes ces variantes : `JitterBufferMode = 1`,
+The returned `streamConfig` is **identical** across all these variants: `JitterBufferMode = 1`,
 `VideoStreamMode = 4`, `TXMinBitrate = 333000`, `TXMaxBitrate = 6000000`, `KeyFrameInterval = 0`,
-`RateAdaptationEnabled = true`, `RTCPTimeoutInterval = 20`, `RxPayloadType = 123`. Aucun levier de l'offre ni
-de l'enveloppe `startmediastream` ne le fait bouger d'un champ.
+`RateAdaptationEnabled = true`, `RTCPTimeoutInterval = 20`, `RxPayloadType = 123`. No lever in the
+offer or in the `startmediastream` envelope moves it by a single field.
 
-### Où est la seconde
+### Where the second is hiding
 
-`PipelineMs` — le retard **horodatage → arrivée**, qui couvre le transport et tout ce que le téléphone fait
-après avoir horodaté une image — tient dans **40 ms d'écart sur vingt sessions**, alors que la latence lue sur
-les pixels varie de 1,00 s à 1,78 s dans les mêmes sessions et **ne corrèle pas** avec elle. Le retard n'est
-donc ni dans le tunnel, ni dans l'encodeur après horodatage, ni dans notre chaîne (l'horodatage PC est celui
-du dernier paquet, avant tout décodage) : il est **en amont de l'horodatage**, entre les pixels affichés sur
-le téléphone et la capture qui les estampille.
+`PipelineMs` — the **timestamp-to-arrival** lag, which covers transport and everything the phone
+does after timestamping a frame — sits within **40 ms across twenty sessions**, while the latency
+read off the pixels ranges from 1.00 s to 1.78 s in those same sessions and **does not correlate**
+with it. The lag is therefore neither in the tunnel, nor in the encoder after timestamping, nor in
+our own pipeline (the PC timestamp is that of the last packet, before any decoding): it sits
+**upstream of the timestamp**, between the pixels shown on the phone and the capture that stamps
+them.
 
-Le tap le confirme : 1,00 s mesuré deux fois sur deux juste après un tap (une fois sur l'icône Safari, une
-fois sur une zone vide de la page), 1,22 s quatre-vingt-dix secondes plus tard, 1,55 – 1,78 s sur dix sessions
-sans tap. C'est la signature d'un ralenti d'inactivité côté iOS que le toucher réveille. **Ce n'est pas un
-levier du protocole** — rien dans la négociation ne l'atteint.
+The tap confirms it: 1.00 s measured twice, on two separate occasions right after a tap (once on
+the Safari icon, once on an empty area of the page), 1.22 s ninety seconds later, 1.55 – 1.78 s
+across ten sessions with no tap. This is the signature of an idle slowdown on the iOS side that
+touch wakes up. **It is not a lever in the protocol** — nothing in the negotiation reaches it.
 
-### Décision
+### Decision
 
-**Le défaut ne change pas** : `StreamTuning.Default` reste la négociation de Xcode octet pour octet, sans
-boucle RCTL, parce qu'aucune des vingt variantes mesurées ne descend en dessous, et que la seule qui descende
-(un toucher sur l'écran) n'est pas un réglage. `offer-check` reste donc vert sans être touché. Les leviers
-restent tous accessibles par `--variant=`, combinables avec `+`, pour la campagne suivante.
+**The default does not change**: `StreamTuning.Default` stays the Xcode negotiation, byte for
+byte, with no RCTL loop, because none of the twenty variants measured goes lower, and the one that
+does (touching the screen) is not a setting. `offer-check` therefore stays green, untouched. All
+the levers remain available via `--variant=`, combinable with `+`, for the next campaign.
 
-### Ce qui reste inexpliqué
+### What remains unexplained
 
-- **Aucune variante ne descend sous 1 s**, et l'objectif de 200 ms n'est pas atteint : le plancher mesuré est
-  1,00 s, écran fraîchement touché.
-- Ce plancher d'une seconde n'a pas été localisé. Il est en amont de l'horodatage RTP, mais la mesure ne
-  distingue pas *la page repeinte en retard sur l'écran du téléphone* de *la capture qui estampille en retard
-  une image déjà affichée*. Il faudrait une horloge que iOS ne peut pas ralentir (une vue native animée, pas
-  une page web) pour trancher.
-- Les mesures pixel portent une constante inconnue : l'horloge du PC était **154 ms en avance** sur NTP
-  pendant la campagne (`w32tm /stripchart`), donc les latences vraies valent les chiffres ci-dessus **moins
-  154 ms**. Le tableau les donne bruts, comme lus.
-- Le service d'affichage devient sourd (« pas de SETTINGS du téléphone en 3 s ») après six à huit sessions
-  média rapprochées ; un `unmount` suffit à le réveiller. Non lié aux variantes : il tombe aussi bien sur la
-  négociation par défaut.
+- **No variant goes below 1 s**, and the 200 ms target is not met: the measured floor is 1.00 s,
+  right after touching the screen.
+- This one-second floor has not been located. It sits upstream of the RTP timestamp, but the
+  measurement cannot tell apart *the page being repainted late on the phone's own screen* from
+  *the capture stamping an already-displayed frame late*. A clock iOS cannot slow down (a native
+  animated view, not a web page) would be needed to settle it.
+- The pixel measurements carry an unknown constant: the PC's clock was **154 ms ahead** of NTP
+  during the campaign (`w32tm /stripchart`), so the true latencies are the figures above **minus
+  154 ms**. The table gives them raw, as read.
+- The display service goes deaf ("no SETTINGS from the phone in 3 s") after six to eight media
+  sessions in close succession; an `unmount` is enough to wake it back up. Unrelated to the
+  variants: it happens on the default negotiation just as well.
 
-## Étape 5 — le tampon du décodeur (9 septembre 2026)
+## Stage 5 — the decoder's buffer (9 September 2026)
 
-Le décodeur logiciel de Windows retenait des images avant d'en rendre une : le miroir était en retard d'autant,
-et **aucun compteur interne ne pouvait le voir** — chaque image porte l'heure d'arrivée de ses propres paquets,
-donc les étapes « fil / attente / décodage » restent à quelques millisecondes pendant que l'écran affiche une
-demi-seconde de passé. `H264Decoder.InFlight` (unités entrées − images sorties) est le compteur qui le montre.
+Windows' software decoder was holding frames back before rendering one: the mirror was lagging by
+that much, and **no internal counter could see it** — every frame carries the arrival time of its
+own packets, so the "wire / queue / decode" stages stay a few milliseconds while the screen shows
+half a second of the past. `H264Decoder.InFlight` (units in − frames out) is the counter that
+reveals it.
 
-### Ce qui retenait les images
+### What was holding the frames back
 
-1. **Le mode faible latence n'était posé que par une porte.** `CODECAPI_AVLowLatencyMode` sur `ICodecAPI` et
-   `MF_LOW_LATENCY` sur `IMFTransform.GetAttributes()` sont **le même GUID** `9c27891a-…` par deux chemins, et
-   ce décodeur n'ouvre pas les deux. Les deux sont posées, HRESULT vérifié (`LowLatencySet`) : **48 → 12 images
-   retenues**.
-2. **Le SPS du téléphone ne dit rien du réordonnancement.** Profil 100, niveau 5.1, 1328×2896 = 83 × 181 = 15 023
-   macroblocs ; `MaxDpbMbs(5.1) = 184 320`, donc DPB = min(184320 / 15023, 16) = **12**. Le VUI existe (description
-   couleur présente) mais **`bitstream_restriction_flag = 0`** : faute de déclaration, le décodeur suppose le pire
-   que le niveau autorise et attend douze images. Or le flux n'a **aucune image B** — mesuré : 1 tranche I,
-   440 tranches P, 0 B sur une capture de 441 unités (`decode-capture`, ligne « types de tranche »).
+1. **Low-latency mode was only set through one door.** `CODECAPI_AVLowLatencyMode` on `ICodecAPI`
+   and `MF_LOW_LATENCY` on `IMFTransform.GetAttributes()` are **the same GUID** `9c27891a-…` via
+   two paths, and this decoder does not open both. Both are set, HRESULT checked
+   (`LowLatencySet`): **48 → 12 frames held**.
+2. **The phone's SPS says nothing about reordering.** Profile 100, level 5.1, 1328×2896 =
+   83 × 181 = 15,023 macroblocks; `MaxDpbMbs(5.1) = 184,320`, so DPB = min(184320 / 15023, 16) =
+   **12**. The VUI exists (colour description present) but **`bitstream_restriction_flag = 0`**:
+   for lack of a declaration, the decoder assumes the worst the level allows and waits for twelve
+   frames. Yet the stream has **no B frames at all** — measured: 1 I slice, 440 P slices, 0 B
+   across a 441-unit capture (`decode-capture`, "slice types" line).
 
-### Le correctif : réécriture du SPS
+### The fix: SPS rewriting
 
-`Media\SpsRewriter.cs` relit le SPS bit à bit (exp-Golomb ue/se, retrait puis réinsertion des octets
-anti-émulation `00 00 03`), recopie chaque champ à l'identique jusqu'au `bitstream_restriction_flag` — dernier
-champ d'un VUI, donc la queue est à nous à partir de là — et écrit la restriction :
-`motion_vectors_over_pic_boundaries_flag = 1`, `max_bytes_per_pic_denom = 0`, `max_bits_per_mb_denom = 0`,
+`Media\SpsRewriter.cs` reads the SPS bit by bit (exp-Golomb ue/se, stripping and re-inserting the
+anti-emulation `00 00 03` bytes), copies each field unchanged up to
+`bitstream_restriction_flag` — the last field of a VUI, so from there on the tail is ours to write
+— and writes the restriction: `motion_vectors_over_pic_boundaries_flag = 1`,
+`max_bytes_per_pic_denom = 0`, `max_bits_per_mb_denom = 0`,
 `log2_max_mv_length_horizontal = vertical = 16`, **`max_num_reorder_frames = 0`**,
-`max_dec_frame_buffering = max_num_ref_frames` (4 ici). Les deux branches sont traitées : VUI absent (on en écrit
-un, huit drapeaux à zéro puis la restriction) et VUI présent avec ou sans restriction.
+`max_dec_frame_buffering = max_num_ref_frames` (4 here). Both branches are handled: no VUI (one is
+written, eight flags at zero then the restriction) and a VUI present with or without the
+restriction.
 
-`H264Depacketizer` réécrit le SPS **au moment où il le lit** — dans l'`avcC` du premier paquet, seul endroit où
-ce flux en met un — et c'est le SPS réécrit qui est préfixé à chaque IDR. Un SPS illisible passerait tel quel
-(`SpsRewriteFailures`) plutôt que d'être perdu.
+`H264Depacketizer` rewrites the SPS **at the moment it reads it** — inside the `avcC` of the first
+packet, the only place this stream puts one — and it is the rewritten SPS that gets prefixed to
+every IDR. An unreadable SPS passes through unchanged (`SpsRewriteFailures`) rather than being
+dropped.
 
-SPS du téléphone : `27 64 00 33 4B 04 C5 14 05 30 16 BA 6E 04 04 04 04` (17 o) → réécrit
-`27 64 00 33 4B 04 C5 14 05 30 16 BA 6E 04 04 04 0F 08 84 65 80` (21 o).
+Phone's SPS: `27 64 00 33 4B 04 C5 14 05 30 16 BA 6E 04 04 04 04` (17 B) → rewritten to
+`27 64 00 33 4B 04 C5 14 05 30 16 BA 6E 04 04 04 0F 08 84 65 80` (21 B).
 
-`sps-selftest` (sonde, hors ligne) vérifie sur trois cas — le SPS réel, le même avec le VUI retiré, et le SPS déjà
-réécrit — que profil, niveau, chroma, dimensions, `num_ref_frames`, `frame_mbs_only_flag` et le rognage sont
-inchangés, que la restriction est là avec un réordonnancement nul, et qu'une **seconde passe ne change pas un
-octet** (ce qui prouve que le lecteur et l'écrivain sont d'accord). Un PPS présenté comme SPS est refusé.
+`sps-selftest` (probe, offline) checks against three cases — the real SPS, the same with the VUI
+stripped, and an already-rewritten SPS — that profile, level, chroma, dimensions,
+`num_ref_frames`, `frame_mbs_only_flag` and the crop are unchanged, that the restriction is there
+with zero reordering, and that a **second pass changes not a single byte** (proof that the reader
+and the writer agree). A PPS presented as an SPS is rejected.
 
-### Mesures
+### Measurements
 
-| Étape | Images retenues | Latence absolue |
+| Stage | Frames held | Absolute latency |
 | --- | --- | --- |
-| Faible latence par une seule porte | 48 | ~2 s (jugé à l'œil) |
+| Low-latency through a single door | 48 | ~2 s (eyeballed) |
 | `MF_LOW_LATENCY` + `CODECAPI_AVLowLatencyMode` | 12 | **484 ms** (468 / 481 / 492 / 494) |
-| `CODECAPI_AVDecNumWorkerThreads = 1` en plus | 12 | non mesurée — abandonné |
-| **+ réécriture du SPS** | **0** | **96 ms** (90 / 96 / 97 / 100) |
+| `CODECAPI_AVDecNumWorkerThreads = 1` on top | 12 | not measured — abandoned |
+| **+ SPS rewriting** | **0** | **96 ms** (90 / 96 / 97 / 100) |
 
-Latence absolue mesurée contre le **chronomètre natif de l'app Horloge** : un `tap` le démarre (instant T0 = heure
-PC du tap + 65 ms de maintien), puis `mirror-test 12 --suite=<dossier>` écrit une image par seconde nommée par
-l'heure PC de son dernier paquet ; latence = heure PC de l'image − T0 − valeur lue au chronomètre. Cette mesure
-**ne dépend d'aucune synchronisation d'horloge** (le chronomètre est une durée, pas une heure), contrairement à
-`clock-test` qui compare l'heure PC à l'heure NTP du téléphone. Vérification : l'écart avant/après vaut 388 ms,
-soit exactement 12 images à 31 i/s — les deux mesures se recoupent.
+Absolute latency measured against the **native stopwatch of the Clock app**: a `tap` starts it
+(instant T0 = PC time of the tap + 65 ms hold), then `mirror-test 12 --suite=<folder>` writes one
+frame per second named by the PC time of its last packet; latency = PC time of the frame − T0 −
+value read on the stopwatch. This measurement **depends on no clock synchronisation** (the
+stopwatch is a duration, not a time), unlike `clock-test` which compares PC time against the
+phone's NTP time. Cross-check: the before/after gap equals 388 ms, exactly 12 frames at 31 fps —
+the two measurements agree.
 
-**Conséquence pour l'étape 4** : la seconde inexpliquée du tableau précédent était mesurée sur **time.is dans
-Safari**. Sur une vue native, le plancher est de 96 ms. C'est le contrôle que la section « Ce qui reste
-inexpliqué » réclamait : le retard était dans le repeint ralenti d'une page web, pas dans la chaîne.
+**Consequence for stage 4**: the unexplained second in the previous table was measured on
+**time.is in Safari**. On a native view, the floor is 96 ms. That is the check the "What remains
+unexplained" section was asking for: the lag was in a web page's slowed-down repaint, not in the
+pipeline.
 
-### Pistes écartées
+### Paths ruled out
 
-- **`CODECAPI_AVDecNumWorkerThreads = 1`** : le MFT le supporte (`IsSupported` = S_OK) mais **refuse le VT_UI4 que
-  la documentation annonce** (`E_INVALIDARG`) et n'accepte que **VT_I4**. Posé, il laisse les 12 images retenues
-  intactes et fait tomber le décodage de ~450 à ~271 images/s. Aucun gain, moitié du débit : non retenu.
-- **Décodeur matériel par `MFTEnumEx`** et **`MFT_MESSAGE_COMMAND_DRAIN` après chaque unité** : non tentés, la
-  réécriture du SPS ayant amené le tampon à zéro. Le drain par unité aurait de toute façon jeté les images de
-  référence d'un flux qui n'a qu'une seule image clé pour toute la session.
+- **`CODECAPI_AVDecNumWorkerThreads = 1`**: the MFT supports it (`IsSupported` = S_OK) but
+  **refuses the VT_UI4 the documentation announces** (`E_INVALIDARG`) and only accepts **VT_I4**.
+  Once set, it leaves the 12 held frames untouched and drops decode throughput from ~450 to ~271
+  frames/s. No gain, half the throughput: not kept.
+- **Hardware decoder via `MFTEnumEx`** and **`MFT_MESSAGE_COMMAND_DRAIN` after every unit**: not
+  tried, since the SPS rewrite already brought the buffer to zero. The per-unit drain would in any
+  case have discarded the reference frames of a stream that has only one key frame for the whole
+  session.
 
-### Ce que la sonde et l'app affichent
+### What the probe and the app display
 
-- `mirror-test` : `decodeur : N image(s) retenue(s), faible latence OUI|NON`.
-- `decode-capture` : la même ligne avant la vidange, plus `types de tranche : I … P … B …`.
-- App, bloc VIDEO de la ligne de statistiques : `decodeur retient N  faible latence oui|NON`
+- `mirror-test`: `decoder: N frame(s) held, low latency YES|NO`.
+- `decode-capture`: the same line before flushing, plus `slice types: I … P … B …`.
+- App, VIDEO block of the statistics line: `decoder holds N  low latency yes|NO`
   (`MediaStats.DecoderInFlight`, `MediaStats.DecoderLowLatency`).
-## Critères d'acceptation
+## Acceptance criteria
 
-- Capture neuve avec SPS/PPS/IDR au début ; `decode-capture` produit une image BMP lisible (on l’ouvre pour la regarder).
-- `mirror-test 60` : flux continu au-delà de 20 s grâce aux RR ; ≥ 30 images/s décodées à 1328×2880 ; latence de décodage
-  mesurée (arrivée du dernier paquet d'une image → image décodée) affichée, objectif < 30 ms.
-- Aucun changement des messages CoreDevice hors le choix des banques ; `offer-check` toujours vert.
+- A fresh capture with SPS/PPS/IDR at the start; `decode-capture` produces a readable BMP frame (open it to check).
+- `mirror-test 60`: continuous stream beyond 20 s thanks to the RRs; ≥ 30 frames/s decoded at 1328×2880; decode
+  latency (last packet of a frame arrives → frame decoded) measured and displayed, target < 30 ms.
+- No change to the CoreDevice messages other than the choice of banks; `offer-check` still green.

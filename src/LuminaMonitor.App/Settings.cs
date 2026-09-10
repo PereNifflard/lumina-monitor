@@ -119,6 +119,32 @@ public sealed class Settings
     [JsonPropertyName("unlockCode")]
     public string UnlockCode { get; set; } = "";
 
+    /// <summary>
+    /// The interface's language: <c>auto</c>, <c>en</c> or <c>fr</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>auto</c> — the default, and what a missing or unknown value means —
+    /// is French when Windows displays in French and English everywhere else.
+    /// Read at start-up, and written by the window's system menu (right-click
+    /// the title bar), which also applies the change on the spot. The journal
+    /// stays French either way.
+    /// </remarks>
+    [JsonPropertyName("language")]
+    public string Language { get; set; } = "auto";
+
+    /// <summary>
+    /// Whether the window has already shown that the drawn side buttons can be
+    /// clicked.
+    /// </summary>
+    /// <remarks>
+    /// False on a first run — and on any older settings file, which has no
+    /// such key — so the four buttons pulse once and a bubble says what they
+    /// are. Set as soon as that has been shown. The window's system menu shows
+    /// it again whenever asked; a <c>--diagnostic</c> run never spends it.
+    /// </remarks>
+    [JsonPropertyName("chassisHintShown")]
+    public bool ChassisHintShown { get; set; } = false;
+
     /// <summary>Where the window was when it was last closed. Zero means centre it.</summary>
     [JsonPropertyName("windowBounds")]
     public double[] WindowBounds { get; set; } = [];

@@ -47,7 +47,7 @@ internal sealed partial class ImageMounter : IDisposable
         }
         catch (TimeoutException)
         {
-            throw new TimeoutException($"Le telephone ne repond pas a {command} en {ReplyTimeout.TotalSeconds:N0} s.");
+            throw new TimeoutException(CoreTexts.Current.PhoneNoAnswer(command, ReplyTimeout.TotalSeconds));
         }
         if (Trace is not null)
         {

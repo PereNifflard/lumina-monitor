@@ -1,62 +1,65 @@
-# Compiler soi-même
+**English** · [Français](BUILD.fr.md)
 
-Pour installer la version téléchargée plutôt que compiler, voir
+# Building it yourself
+
+To install the downloaded release instead of building, see
 [`INSTALLATION.md`](INSTALLATION.md).
 
-## Ce qu'il faut
+## What you need
 
-Le **SDK .NET 8** ([dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet/8.0)),
-et rien d'autre. Pas de NuGet, pas de restauration de paquets, pas d'outil
-externe : le dépôt ne dépend d'aucune bibliothèque tierce, et
-`dotnet restore` n'a littéralement rien à télécharger.
+The **.NET 8 SDK** ([dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet/8.0)),
+and nothing else. No NuGet, no package restore, no external tool: the
+repository depends on no third-party library, and `dotnet restore` has
+literally nothing to download.
 
-Visual Studio n'est pas nécessaire ; la solution s'ouvre dedans si tu en as un.
+Visual Studio isn't required; the solution opens in it if you have one.
 
-## Construire
+## Building
 
 ```
 dotnet build LuminaMonitor.sln -c Release
 ```
 
-Le dépôt est tenu à **zéro avertissement** ; l'intégration continue construit
-avec `-warnaserror` pour que ça le reste. Fais pareil avant de proposer un
-changement :
+The repository is held to **zero warnings**; continuous integration builds
+with `-warnaserror` to keep it that way. Do the same before proposing a
+change:
 
 ```
 dotnet build LuminaMonitor.sln -c Release -warnaserror
 ```
 
-L'exécutable atterrit dans
-`src\LuminaMonitor.App\bin\Release\net8.0-windows\LuminaMonitor.App.exe`, et la
-sonde à côté, dans `src\LuminaMonitor.UsbProbe\bin\Release\net8.0-windows\`.
+The executable lands at
+`src\LuminaMonitor.App\bin\Release\net8.0-windows\LuminaMonitor.App.exe`, and
+the probe next to it, in
+`src\LuminaMonitor.UsbProbe\bin\Release\net8.0-windows\`.
 
-Pour fabriquer le même exécutable autonome que les Releases — un seul `.exe`,
-aucun runtime à installer chez l'utilisateur :
+To produce the same self-contained executable as the Releases — a single
+`.exe`, no runtime for the user to install:
 
 ```
 dotnet publish src/LuminaMonitor.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
 ```
 
-Il pèse une petite centaine de mégaoctets : WPF et le runtime .NET voyagent
-dedans.
+It weighs in at around a hundred megabytes: WPF and the .NET runtime travel
+inside it.
 
-## Les quatre projets
+## The four projects
 
-| Projet | Cible | En une phrase |
+| Project | Target | In one sentence |
 |---|---|---|
-| `src/LuminaMonitor.Formats` | `net8.0` | Les lecteurs des formats dans lesquels Apple emballe l'image développeur : xar (XIP), pbzx, xz/LZMA2, cpio, UDIF (DMG), HFS+ et APFS — tous écrits ici, à partir des spécifications publiées, parce que Windows n'en lit aucun. |
-| `src/LuminaMonitor.Core` | `net8.0`, Windows uniquement | Le protocole Apple lui-même : usbmux, lockdown en TLS mutuel, mode développeur, montage de l'image, tunnel CoreDevice, pile TCP/IPv6 en espace utilisateur, RemoteXPC, flux vidéo et surfaces HID — tout ce que la fenêtre voit se résume à `DeviceSession`. |
-| `src/LuminaMonitor.App` | `net8.0-windows`, WPF | La fenêtre : le châssis dessiné, le miroir, la traduction des gestes de la souris en doigt sur le verre, le clavier, les compteurs et le journal. |
-| `src/LuminaMonitor.UsbProbe` | `net8.0-windows`, console | La sonde de diagnostic : chaque barreau de l'échelle USB isolé dans une commande, plus les auto-tests hors ligne. |
+| `src/LuminaMonitor.Formats` | `net8.0` | Readers for the formats Apple packs the Developer Disk Image into: xar (XIP), pbzx, xz/LZMA2, cpio, UDIF (DMG), HFS+ and APFS — all written here, from the published specifications, because Windows reads none of them natively. |
+| `src/LuminaMonitor.Core` | `net8.0`, Windows only | Apple's protocol itself: usbmux, lockdown over mutual TLS, Developer Mode, image mounting, the CoreDevice tunnel, a user-space TCP/IPv6 stack, RemoteXPC, the video stream and HID surfaces — everything the window sees boils down to `DeviceSession`. |
+| `src/LuminaMonitor.App` | `net8.0-windows`, WPF | The window: the drawn chassis, the mirror, translating mouse gestures into a finger on the glass, the keyboard, the counters and the log. |
+| `src/LuminaMonitor.UsbProbe` | `net8.0-windows`, console | The diagnostic probe: every rung of the USB ladder isolated into a command, plus the offline self-tests. |
 
-`Core` et `Formats` exposent leurs briques internes à la sonde par
-`InternalsVisibleTo` : c'est elle qui les attaque directement, l'app non.
+`Core` and `Formats` expose their internal building blocks to the probe via
+`InternalsVisibleTo`: it's the probe that attacks them directly, not the app.
 
-## Les auto-tests hors ligne
+## The offline self-tests
 
-Ils ne demandent **ni iPhone ni réseau**, et rendent un code de sortie non nul
-quand un scénario échoue. Ce sont exactement ceux que fait tourner
-l'intégration continue.
+They need **neither an iPhone nor a network**, and return a non-zero exit
+code when a scenario fails. These are exactly the ones continuous
+integration runs.
 
 ```
 dotnet run --project src/LuminaMonitor.UsbProbe -- formats-check
@@ -67,67 +70,69 @@ dotnet run --project src/LuminaMonitor.UsbProbe -- tcp-selftest
 dotnet run --project src/LuminaMonitor.UsbProbe -- mf-selftest
 ```
 
-| Commande | Ce qu'elle prouve |
+| Command | What it proves |
 |---|---|
-| `formats-check` | La chaîne xar → pbzx → cpio relit une archive fabriquée pour l'occasion, octet pour octet. |
-| `offer-check` | L'offre média construite est identique au gabarit Xcode, et les leviers de réglage partent bien sur le fil. |
-| `sps-selftest` | La réécriture du SPS H.264 est relue puis repassée : un bit faux ne donne pas une image fausse, il donne zéro image. |
-| `watchdog-selftest` | L'échelle de la veille du flux — image clé, relance, reset doux — jouée sur des instants inventés, puisqu'elle ne tourne en vrai que quand tout est déjà cassé. |
-| `tcp-selftest` | La pile TCP du tunnel contre un téléphone de papier : c'est le seul endroit où la fenêtre de réception se referme à volonté. |
-| `mf-selftest` | Le décodeur H.264 de Media Foundation s'instancie et accepte les types d'entrée et de sortie : l'interop COM tient. |
+| `formats-check` | The xar → pbzx → cpio chain reads back an archive built for the occasion, byte for byte. |
+| `offer-check` | The media offer built by the app is identical to the Xcode template, and the tuning knobs really do land on the wire. |
+| `sps-selftest` | The H.264 SPS rewrite is read back and replayed: a wrong bit doesn't give a wrong image, it gives zero image. |
+| `watchdog-selftest` | The stream watchdog's ladder — keyframe, restart, soft reset — exercised on invented timestamps, since it only runs for real once everything is already broken. |
+| `tcp-selftest` | The tunnel's TCP stack against a paper phone: the only place where the receive window closes on demand. |
+| `mf-selftest` | Media Foundation's H.264 decoder instantiates and accepts the input and output media types: the COM interop holds. |
 
-Deux autres tournent aussi sans téléphone : `decode-capture <fichier.rtp>`
-rejoue une capture et en écrit une image en BMP, `mouse-flood <secondes>`
-bombarde la fenêtre de l'app de mouvements de souris de synthèse.
+Two more also run without a phone: `decode-capture <file.rtp>` replays a
+capture and writes one frame as a BMP, `mouse-flood <seconds>` floods the
+app's window with synthetic mouse movement.
 
-## Les commandes de la sonde, avec l'iPhone branché
+## Probe commands, with the iPhone plugged in
 
-**Une seule à la fois, et jamais pendant que l'app tourne** : le service
-d'affichage du téléphone ne sert qu'une session.
+**One at a time, and never while the app is running**: the phone's display
+service serves only one session.
 
-| Commande | À quoi elle sert |
+| Command | What it's for |
 |---|---|
-| `list` | Les appareils vus par le multiplexeur Apple. Le premier réflexe : si rien ici, rien ne marchera plus haut. |
-| `info` | Les clés d'identité lues par lockdown, sans appairage. Dit la version d'iOS. |
-| `session` | Ouvre la session TLS avec l'enregistrement d'appairage stocké par Apple. Le barreau de l'authentification. |
-| `pair <udid>` | Lit cet enregistrement d'appairage, sans rien y écrire. |
-| `buid` | L'identifiant d'hôte du multiplexeur. |
-| `devmode reveal` / `enable` | Fait apparaître, puis active, le Mode développeur (le téléphone redémarre). |
-| `ddi` | Les identifiants de personnalisation et le nonce que réclame le serveur de signature d'Apple. |
-| `mount <dossier>` / `unmount` | Monte, ou démonte, l'image développeur. Le remède au miroir figé. |
-| `tunnel` | Ouvre le tunnel CoreDevice et attend un premier paquet IPv6. |
-| `rsd` | Le service RSD et son catalogue brut. |
-| `catalogue` | La liste des services RemoteXPC offerts par le téléphone — utile quand un service change de nom d'une version d'iOS à l'autre. |
-| `ping [n]` | ICMPv6 à travers le tunnel : ce qu'il mesure, c'est le câble et le démon, rien au-dessus. |
-| `stream-info [codec] [sec]` | Avec quelle banque de codecs le téléphone répond, et ce que le RTP transporte vraiment. |
-| `mirror-test [sec] [sortie.bmp]` | Le miroir en direct, écrit en images fixes. |
-| `clock-test [sec]` | Le délai absolu, mesuré sur une seconde qui tourne à l'écran du téléphone. |
-| `motion-test [sec]` | Est-ce que le miroir décroche quand l'écran bouge ? |
-| `latency-test [n]` | La latence de bout en bout, mesurée sur les pixels. |
-| `tap <x%> <y%>` | Un vrai toucher, en montant toute l'échelle. |
-| `keys <texte>` | Tape une ligne sur le clavier virtuel. |
-| `button <home\|lock\|volume-up\|volume-down\|mute\|siri>` | Presse les vrais boutons du châssis. |
-| `flood [sec]` | Charge le chemin d'entrée et mesure ce qui passe. |
-| `listen [sec]` | Regarde les branchements et débranchements arriver. |
+| `list` | Devices seen by the Apple multiplexer. The first thing to check: if nothing shows up here, nothing higher up will work either. |
+| `info` | Identity keys read by lockdown, without pairing. Tells you the iOS version. |
+| `session` | Opens the TLS session with the pairing record Apple stored. The authentication rung. |
+| `pair <udid>` | Reads that pairing record, without writing anything to it. |
+| `buid` | The multiplexer's host identifier. |
+| `devmode reveal` / `enable` | Reveals, then enables, Developer Mode (the phone reboots). |
+| `ddi` | The personalization identifiers and nonce Apple's signing server asks for. |
+| `mount <folder>` / `unmount` | Mounts, or unmounts, the Developer Disk Image. The fix for a frozen mirror. |
+| `tunnel` | Opens the CoreDevice tunnel and waits for a first IPv6 packet. |
+| `rsd` | The RSD service and its raw catalog. |
+| `catalogue` | The list of RemoteXPC services the phone offers — useful when a service changes name between iOS versions. |
+| `ping [n]` | ICMPv6 through the tunnel: what it measures is the cable and the daemon, nothing above. |
+| `stream-info [codec] [sec]` | Which codec bank the phone answers with, and what the RTP actually carries. |
+| `mirror-test [sec] [output.bmp]` | The live mirror, written out as still frames. |
+| `clock-test [sec]` | Absolute delay, measured against a clock running on the phone's screen. |
+| `motion-test [sec]` | Does the mirror drop frames when the screen is moving? |
+| `latency-test [n]` | End-to-end latency, measured on the pixels. |
+| `tap <x%> <y%>` | A real touch, exercising the whole stack. |
+| `keys <text>` | Types a line on the virtual keyboard. |
+| `button <home\|lock\|volume-up\|volume-down\|mute\|siri>` | Presses the real chassis buttons. |
+| `flood [sec]` | Loads the input path and measures what gets through. |
+| `listen [sec]` | Watches connects and disconnects as they happen. |
 
-## Extraire l'image développeur en ligne de commande
+## Extracting the Developer Disk Image from the command line
 
-L'app le fait au premier lancement ; la sonde fait la même chose sans fenêtre :
+The app does this on first launch; the probe does the same thing without a
+window:
 
 ```
-dotnet run --project src/LuminaMonitor.UsbProbe -- extract-devsupport "C:\chemin\vers\Xcode_27_beta_6.xip" ddi27
+dotnet run --project src/LuminaMonitor.UsbProbe -- extract-devsupport "C:\path\to\Xcode_27_beta_6.xip" ddi27
 ```
 
-Autour, de quoi regarder dans les archives sans rien extraire :
-`list-xip`, `grep-xip <motif>`, `extract-xip <motif>` et `inspect-dmg
-<image.dmg> [motif]`.
+Around it, tools to look inside archives without extracting anything:
+`list-xip`, `grep-xip <pattern>`, `extract-xip <pattern>` and `inspect-dmg
+<image.dmg> [pattern]`.
 
-## L'intégration continue
+## Continuous integration
 
-- `.github/workflows/build.yml` — à chaque poussée et à chaque pull request sur
-  `main` : construction en Release avec `-warnaserror`, puis les six auto-tests
-  hors ligne, chacun devant rendre 0. L'app compilée part en artefact.
-- `.github/workflows/release.yml` — sur un tag `v*` : publication des deux
-  exécutables autonomes, auto-tests relancés **depuis le binaire empaqueté**,
-  puis `LuminaMonitor-<version>-win-x64.zip` attaché à une Release GitHub créée
-  par `gh`. Aucune action tierce n'y entre.
+- `.github/workflows/build.yml` — on every push and every pull request
+  against `main`: a Release build with `-warnaserror`, then the six offline
+  self-tests, each expected to return 0. The compiled app is uploaded as an
+  artifact.
+- `.github/workflows/release.yml` — on a `v*` tag: publishes the two
+  self-contained executables, reruns the self-tests **from the packaged
+  binary**, then attaches `LuminaMonitor-<version>-win-x64.zip` to a GitHub
+  Release created with `gh`. No third-party action is involved.

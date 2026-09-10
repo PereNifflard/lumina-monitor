@@ -4,10 +4,11 @@ namespace LuminaMonitor.Core;
 /// Something the phone, the multiplexer or Apple's signing server refused.
 /// </summary>
 /// <remarks>
-/// The message is written for the person in front of the screen, in the same
-/// plain French the probe prints: it usually names the thing to do (unlock the
-/// phone, trust the computer, turn Developer Mode on) rather than the layer
-/// that complained.
+/// The message is written for the person in front of the screen, in the
+/// interface's language (<see cref="InterfaceLanguage"/>; the sentences themselves
+/// are in <see cref="CoreTexts"/>): it usually names the thing to do (unlock
+/// the phone, trust the computer, turn Developer Mode on) rather than the
+/// layer that complained.
 /// </remarks>
 public sealed class LuminaException : Exception
 {

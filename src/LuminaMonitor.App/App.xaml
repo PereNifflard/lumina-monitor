@@ -249,5 +249,62 @@
         <Color x:Key="BtnChamferSilver">#F2F4F6</Color>
         <Color x:Key="BtnFaceSilver">#AEB3BA</Color>
 
+        <!-- La couleur qui dit « ceci se clique » sur la tranche : le liseré
+             au repos, le halo au survol, l'étiquette et la bulle. Une par
+             châssis, tirée de son propre chanfrein et poussée vers la lumière :
+             un accent bleu sur un boîtier orange se lirait comme une pièce
+             rapportée. L'argent prend le bleu de la charte, parce qu'un
+             argent plus clair sur de l'argent ne se verrait pas. -->
+        <Color x:Key="BtnAccentCosmicOrange">#FFC896</Color>
+        <Color x:Key="BtnAccentDeepBlue">#A3C9FF</Color>
+        <Color x:Key="BtnAccentSilver">#6FA8FF</Color>
+
+        <!-- Un bouton de la tranche : la cible du clic, large comme la lamelle
+             et la bande de métal qui la porte. Tout ce qui s'y peint est posé
+             une fois par géométrie (Background, BorderBrush) ou basculé par un
+             déclencheur ; rien ne tourne en permanence, et le halo est un
+             dégradé radial, pas un effet — pas de surface intermédiaire. -->
+        <Style x:Key="ChassisButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ClickMode" Value="Press" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <!-- Transparent et non nul : un fond nul ne prendrait plus le clic. -->
+                        <Grid Background="Transparent">
+                            <!-- Le halo : BorderBrush porte le dégradé d'accent,
+                                 posé par ShapeButtons. Il déborde de la cible ;
+                                 la part qui rentre vers l'écran passe sous le
+                                 verre, seule la lumière vers l'extérieur se voit. -->
+                            <Rectangle x:Name="Halo" Fill="{TemplateBinding BorderBrush}"
+                                       Margin="-12" Opacity="0" IsHitTestVisible="False" />
+                            <!-- Au repos : le liseré d'accent, orienté comme le bouton. -->
+                            <Border x:Name="Cue" Background="{TemplateBinding Background}"
+                                    CornerRadius="3" IsHitTestVisible="False" />
+                            <!-- Survol ou focus clavier : plus clair. -->
+                            <Border x:Name="Lit" Background="#4DFFFFFF" CornerRadius="3"
+                                    Opacity="0" IsHitTestVisible="False" />
+                            <!-- Enfoncé, le temps d'un appui : plus sombre. -->
+                            <Border x:Name="Sunk" Background="#8C000000" CornerRadius="3"
+                                    Opacity="0" IsHitTestVisible="False" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Halo" Property="Opacity" Value="1" />
+                                <Setter TargetName="Lit" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Halo" Property="Opacity" Value="1" />
+                                <Setter TargetName="Lit" Property="Opacity" Value="1" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
     </Application.Resources>
 </Application>

@@ -107,7 +107,7 @@ internal sealed class RemoteXpc : IDisposable
         // The daemon's SETTINGS is the sign of life.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         try { await _settingsSeen.Task.WaitAsync(cts.Token).ConfigureAwait(false); }
-        catch (OperationCanceledException) { throw new TimeoutException("RemoteXPC : pas de SETTINGS du telephone en 3 s"); }
+        catch (OperationCanceledException) { throw new TimeoutException(CoreTexts.Current.RemoteXpcNoSettings); }
         // A channel that died before saying anything releases that wait empty,
         // like every other wait here, so the reason is read rather than caught.
         if (Fault is { } fault)
@@ -157,7 +157,7 @@ internal sealed class RemoteXpc : IDisposable
             catch (OperationCanceledException)
             {
                 _staleReplies++;
-                throw new TimeoutException("RemoteXPC : pas de reponse du telephone dans le delai.");
+                throw new TimeoutException(CoreTexts.Current.RemoteXpcNoReply);
             }
             catch (ChannelClosedException exception)
             {

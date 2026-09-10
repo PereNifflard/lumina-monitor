@@ -1,26 +1,28 @@
-# BleProbe — archive d'un résultat négatif
+**English** · [Français](README.fr.md)
 
-Banc d'essai conservé **exprès**, et volontairement **hors de
-`LuminaMonitor.sln`** : il ne fait pas partie de l'application et n'est pas
-compilé avec elle.
+# BleProbe — archive of a negative result
 
-Il a servi à répondre à une seule question, avant que la voie USB ne soit
-choisie : Windows 11 peut-il piloter un iPhone en publiant un clavier/souris
-**Bluetooth LE** (HOGP) depuis l'espace utilisateur ? Trois profils HID sont
-essayés — pointeur relatif, pointeur absolu, digitaliseur tactile —
+A test bench kept **on purpose**, and deliberately **outside
+`LuminaMonitor.sln`**: it isn't part of the application and doesn't build
+with it.
+
+It answered a single question, before the USB path was chosen: can Windows
+11 drive an iPhone by publishing a **Bluetooth LE** (HOGP) keyboard/mouse
+from user mode? Three HID profiles are tried — relative pointer, absolute
+pointer, touch digitizer —
 `LuminaMonitor.BleProbe <relative|absolute|digitizer>`.
 
-**Réponse : non**, et pour deux raisons vérifiées sur une machine réelle :
+**Answer: no**, for two reasons verified on a real machine:
 
-1. l'appairage dual-mode est instable — iOS fusionne les identités Classic et
-   LE et démolit le lien HID neuf ;
-2. iOS n'accepte le **pointeur absolu qu'en Bluetooth Classic**, un rôle que
-   Windows n'offre pas sans pilote noyau tiers — ce que la règle du projet
-   interdit.
+1. dual-mode pairing is unstable — iOS merges the Classic and LE identities
+   and wrecks the fresh HID link;
+2. iOS only accepts an **absolute pointer over Bluetooth Classic**, a role
+   Windows doesn't offer without a third-party kernel driver — which the
+   project's rule forbids.
 
-C'est ce mur qui a envoyé le projet sur le câble USB. Le code reste ici pour
-que la démonstration soit vérifiable plutôt que sur parole ; il ne reçoit
-aucune maintenance.
+This wall is what sent the project to the USB cable. The code stays here so
+the demonstration is verifiable rather than taken on faith; it receives no
+maintenance.
 
-Pour le compiler malgré tout :
+To build it anyway:
 `dotnet build experiments/BleProbe/LuminaMonitor.BleProbe.csproj`.

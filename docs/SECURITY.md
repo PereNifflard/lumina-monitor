@@ -1,177 +1,177 @@
-# Sécurité et vie privée
+**English** · [Français](SECURITY.fr.md)
 
-Ce que Lumina Monitor envoie, ce qu'il écrit, ce qu'il exige — et ce qu'il ne
-fait pas. Tout ce qui suit est vérifiable dans les sources : les points d'entrée
-réseau et disque sont énumérés nommément plus bas.
+# Security and privacy
 
-## Ce qui sort de votre PC
+What Lumina Monitor sends, what it writes, what it requires — and what it
+doesn't do. Everything below is verifiable in the source: the network and
+disk entry points are named explicitly further down.
 
-**Une seule destination sur Internet**, et seulement au moment de monter
-l'image développeur :
+## What leaves your PC
 
-| Quoi | Où | Quand |
+**One single destination on the Internet**, and only when mounting the
+Developer Disk Image:
+
+| What | Where | When |
 |---|---|---|
-| Requête de personnalisation TSS | `https://gs.apple.com/TSS/controller?action=2` | à chaque montage de l'image développeur (donc après chaque redémarrage du téléphone) |
+| TSS personalization request | `https://gs.apple.com/TSS/controller?action=2` | on every mount of the Developer Disk Image (so after every phone reboot) |
 
-C'est le mécanisme d'Apple lui-même : depuis iOS 17, l'image développeur n'est
-montable qu'avec un billet (`ApImg4Ticket`) qu'Apple signe **pour un appareil et
-un aléa donnés**. Sans cet appel, pas de montage, donc pas de pilotage.
+This is Apple's own mechanism: since iOS 17, the Developer Disk Image can
+only be mounted with a ticket (`ApImg4Ticket`) that Apple signs **for a
+given device and nonce**. Without this call, no mount, so no control.
 
-**Ce que la requête contient** (`src/LuminaMonitor.Core/Ddi/Tss.cs`,
-`BuildRequest`) :
+**What the request contains** (`src/LuminaMonitor.Core/Ddi/Tss.cs`,
+`BuildRequest`):
 
-- `ApECID` — l'identifiant unique de la puce de votre iPhone. C'est **un
-  identifiant matériel permanent** ; c'est aussi la seconde moitié de l'UDID.
-- `ApBoardID`, `ApChipID`, et les clés `Ap,*` de personnalisation lues sur le
-  téléphone — modèle de carte, génération de puce.
-- `ApNonce` — un aléa tiré par le téléphone pour ce montage-là.
-- Les empreintes (`Digest`) des composants marqués « Trusted » du
-  `BuildManifest.plist` de l'image : cela dit à Apple **quelle version d'image
-  développeur** vous montez.
-- Un `@UUID` aléatoire tiré à chaque requête, `@HostPlatformInfo = "mac"` et une
-  chaîne de version client (`libauthinstall-1104.0.9`).
+- `ApECID` — the unique identifier of your iPhone's chip. This is **a
+  permanent hardware identifier**; it's also the second half of the UDID.
+- `ApBoardID`, `ApChipID`, and the `Ap,*` personalization keys read from the
+  phone — board model, chip generation.
+- `ApNonce` — a nonce drawn by the phone for this specific mount.
+- The fingerprints (`Digest`) of the components marked "Trusted" in the
+  image's `BuildManifest.plist`: this tells Apple **which version of the
+  Developer Disk Image** you're mounting.
+- A random `@UUID` drawn on every request, `@HostPlatformInfo = "mac"`, and a
+  client version string (`libauthinstall-1104.0.9`).
 
-**Ce que la requête ne contient pas** : aucun nom, aucune adresse e-mail, aucun
-nom d'appareil, aucun nom de machine ou d'utilisateur Windows, aucun numéro de
-série, rien du contenu du téléphone.
+**What the request does not contain**: no name, no email address, no device
+name, no Windows machine or user name, no serial number, nothing from the
+phone's content.
 
-Cette requête est la même que celle qu'Xcode ou l'app « Appareils Apple »
-émettent pour la même opération. Si vous ne voulez pas qu'elle parte, il n'y a
-pas de contournement : le montage de l'image développeur en dépend.
+This is the same request Xcode or the Apple Devices app makes for the same
+operation. If you don't want it to go out, there is no workaround: mounting
+the Developer Disk Image depends on it.
 
-**La connexion TLS est épinglée.** `gs.apple.com` chaîne vers « Apple Root CA »,
-une racine que Windows ne fournit pas. Plutôt que de désactiver la validation
-(ce que font des outils de référence), la racine publique d'Apple est intégrée
-au code, vérifiée par son empreinte SHA-1, et la chaîne doit y aboutir ; le
-reste de la validation TLS (nom d'hôte compris) est intact. La révocation n'est
-pas contrôlée : les listes d'Apple sont publiées sur ses propres hôtes et un
-échec de récupération bloquerait la signature.
+**The TLS connection is pinned.** `gs.apple.com` chains to "Apple Root CA," a
+root Windows doesn't ship. Rather than disabling validation (as some
+reference tools do), Apple's public root is embedded in the code, checked by
+its SHA-1 fingerprint, and the chain must reach it; the rest of TLS
+validation (hostname included) stays intact. Revocation isn't checked:
+Apple's lists are published on its own hosts, and a failed fetch would block
+signing.
 
-**Le reste du trafic ne quitte pas la machine ni le câble :**
+**The rest of the traffic never leaves the machine or the cable:**
 
-- `127.0.0.1:27015` — le multiplexeur USB d'Apple, en boucle locale.
-- Une pile TCP/IPv6 en espace utilisateur qui parle au téléphone **dans le
-  tunnel CoreDevice**, lui-même encapsulé dans la connexion USB. Les adresses
-  `fdd0::1`/`fdd0::2` que vous verrez dans le journal sont internes à ce tunnel
-  et n'existent sur aucun réseau réel.
+- `127.0.0.1:27015` — Apple's USB multiplexer, on loopback.
+- A user-space TCP/IPv6 stack that talks to the phone **inside the
+  CoreDevice tunnel**, itself encapsulated in the USB connection. The
+  `fdd0::1`/`fdd0::2` addresses you'll see in the log are internal to that
+  tunnel and don't exist on any real network.
 
-Il n'y a **aucun autre client HTTP, aucun autre socket sortant, aucune
-résolution DNS** dans le projet : `HttpClient` n'est instancié qu'une fois, dans
-`Tss.cs`, et `TcpClient` qu'une fois, dans `UsbmuxClient.cs`.
+There is **no other HTTP client, no other outbound socket, no DNS
+resolution** in the project: `HttpClient` is instantiated exactly once, in
+`Tss.cs`, and `TcpClient` exactly once, in `UsbmuxClient.cs`.
 
-## Ce qui est écrit sur votre disque
+## What is written to your disk
 
-L'application n'écrit que sous `%APPDATA%\LuminaMonitor` :
+The application writes only under `%APPDATA%\LuminaMonitor`:
 
-| Fichier | Contenu |
+| File | Content |
 |---|---|
-| `settings.json` | dossier de l'image développeur, chemin de la dernière archive, position de la fenêtre, sens de la molette, couleur du châssis. **Aucun secret** : l'appairage appartient à Apple et n'est jamais copié ici. |
-| `lumina.log`, `lumina.1.log` | le journal, tenu à chaque exécution, rotation à 5 Mo. |
-| `ddi\<build>\` | votre copie de l'arbre `Restore/` extraite de **votre** téléchargement Apple. |
-| `ddi\extraction\` | le chantier temporaire de l'extraction. |
+| `settings.json` | the Developer Disk Image folder, path to the last archive, window position, wheel direction, chassis color. **No secret**: pairing belongs to Apple and is never copied here. |
+| `lumina.log`, `lumina.1.log` | the log, kept on every run, rotating at 5 MB. |
+| `ddi\<build>\` | your copy of the `Restore/` tree extracted from **your** Apple download. |
+| `ddi\extraction\` | the extraction's temporary work area. |
 
-### ⚠️ Le journal contient des identifiants d'appareil
+### ⚠️ The log contains device identifiers
 
-`lumina.log` porte, en clair :
+`lumina.log` carries, in plain text:
 
-- l'**UDID** de l'iPhone (`Appareil usbmux #N, UDID …`) — dont la seconde moitié
-  **est l'ECID**, l'identifiant matériel permanent de la puce ;
-- le **nom de l'appareil** tel qu'il est réglé dans iOS (souvent un prénom) ;
-- le modèle, la version d'iOS et le numéro de build ;
-- la ligne de commande complète du processus, donc le chemin de l'exécutable,
-  qui contient en général votre nom d'utilisateur Windows.
+- the iPhone's **UDID** (`usbmux device #N, UDID …`) — whose second half
+  **is the ECID**, the chip's permanent hardware identifier;
+- the **device name** as set in iOS (often a first name);
+- the model, iOS version and build number;
+- the process's full command line, so the executable's path, which usually
+  contains your Windows username.
 
-Le journal ne part nulle part tout seul — mais **relisez-le avant de le joindre
-à un rapport de bogue ou de le publier**. Il n'y a pas de troncature
-aujourd'hui : le compromis est assumé, un UDID entier étant ce qui permet de
-rattacher un journal à un téléphone quand plusieurs sont branchés.
+The log never leaves on its own — but **read it before attaching it to a bug
+report or publishing it**. There's no truncation today: the trade-off is
+deliberate, a full UDID being what lets a log be matched to a phone when
+several are plugged in.
 
-### La sonde, elle, écrit des images de votre écran
+### The probe, on the other hand, writes images of your screen
 
 `LuminaMonitor.UsbProbe` (`mirror-test`, `clock-test`, `motion-test`,
-`latency-test`) écrit des `.bmp`, des `.rtp` et des dossiers de vignettes **dans
-le répertoire courant** : ce sont des captures de l'écran du téléphone. Le
-`.gitignore` bloque `*.bmp` et `*.rtp`, mais un dossier de vignettes passé en
-`--out=` n'est couvert par rien. Ne les commettez pas, ne les partagez pas sans
-les regarder.
+`latency-test`) writes `.bmp`, `.rtp` and thumbnail folders **to the current
+directory**: these are captures of the phone's screen. `.gitignore` blocks
+`*.bmp` and `*.rtp`, but a thumbnail folder passed via `--out=` isn't
+covered by anything. Don't commit them, don't share them without looking at
+them first.
 
-## Ce que l'application exige du téléphone
+## What the application requires from the phone
 
-- **Le téléphone doit être appairé** au PC (« Se fier à cet ordinateur »).
-  L'appairage est celui négocié par l'app « Appareils Apple » ; ce projet le
-  **lit** pour ouvrir la session TLS, il n'en crée pas, n'en stocke pas et ne
-  demande aucun code.
-- **Le mode développeur doit être activé** (Réglages → Confidentialité et
-  sécurité). C'est un réglage qui abaisse délibérément une protection d'iOS et
-  qui exige un redémarrage : ne l'activez que sur un appareil dont vous êtes
-  propriétaire et que vous acceptez d'ouvrir au débogage.
-- **L'image développeur doit être montée**, et elle l'est à chaque redémarrage
-  du téléphone. Elle apporte les services de pilotage (HID, affichage).
-- **L'écran doit être déverrouillé** au moment du montage : iOS répond
-  `DeviceLocked` sinon.
-- **iOS 27** pour le toucher ; sur iOS 26 seuls les boutons passent.
+- **The phone must be paired** with the PC ("Trust This Computer"). Pairing
+  is the one negotiated by the Apple Devices app; this project **reads** it
+  to open the TLS session, it doesn't create one, doesn't store one, and
+  asks for no passcode.
+- **Developer Mode must be enabled** (Settings → Privacy & Security). This
+  is a setting that deliberately lowers an iOS protection and requires a
+  reboot: only enable it on a device you own and are willing to open up to
+  debugging.
+- **The Developer Disk Image must be mounted**, and it is, on every phone
+  reboot. It brings the control services (HID, display).
+- **The screen must be unlocked** at the time of mounting: iOS answers
+  `DeviceLocked` otherwise.
+- **iOS 27** for touch; on iOS 26 only the buttons work.
 
-Autrement dit : l'application ne contourne aucune protection d'iOS. Elle
-emprunte des portes qu'Apple ouvre, à condition que le propriétaire de
-l'appareil les ait ouvertes lui-même, physiquement, sur l'appareil.
+In other words: the application bypasses no iOS protection. It walks
+through doors that Apple opens, provided the device's owner opened them
+themselves, physically, on the device.
 
-## Ce que l'application ne fait pas
+## What the application does not do
 
-- **Aucune télémétrie**, aucune statistique d'usage, aucun rapport de plantage
-  distant, aucune vérification de mise à jour. Le seul appel réseau du projet
-  est la requête TSS décrite plus haut.
-- **Aucun code tiers.** Zéro `PackageReference` dans les quatre `.csproj`, zéro
-  binaire téléchargé, zéro pilote installé. Les lecteurs xar, pbzx, xz/LZMA2,
-  cpio, UDIF, HFS+ et APFS sont écrits ici, d'après les spécifications
-  publiées.
-- **Aucune redistribution de binaire Apple.** Ni image développeur, ni firmware,
-  ni composant d'Xcode ne se trouve dans ce dépôt, et le `.gitignore` bloque
-  `/ddi*/`, `*.xip`, `*.dmg` et `*.pkg`. Chacun extrait l'image de son propre
-  téléchargement, avec son propre compte Apple.
-- **N'arrête jamais le processus Apple.** `AppleMobileDeviceProcess.exe` détient
-  l'interface USB et les enregistrements d'appairage : le tuer casserait
-  l'appairage de l'utilisateur.
-- **Ne lit rien du contenu du téléphone.** L'application reçoit un flux vidéo de
-  l'écran et envoie des rapports HID. Elle n'ouvre aucun système de fichiers du
-  téléphone, ne liste aucune application, n'extrait aucune donnée.
+- **No telemetry**, no usage statistics, no remote crash reporting, no
+  update check. The project's only network call is the TSS request
+  described above.
+- **No third-party code.** Zero `PackageReference` across the four
+  `.csproj` files, zero downloaded binary, zero installed driver. The xar,
+  pbzx, xz/LZMA2, cpio, UDIF, HFS+ and APFS readers are written here, from
+  published specifications.
+- **No redistribution of Apple binaries.** No Developer Disk Image, no
+  firmware, no Xcode component lives in this repository, and `.gitignore`
+  blocks `/ddi*/`, `*.xip`, `*.dmg` and `*.pkg`. Everyone extracts the image
+  from their own download, with their own Apple account.
+- **Never stops the Apple process.** `AppleMobileDeviceProcess.exe` holds
+  the USB interface and the pairing records: killing it would break the
+  user's pairing.
+- **Reads nothing from the phone's content.** The application receives a
+  video stream of the screen and sends HID reports. It opens no file system
+  on the phone, lists no app, extracts no data.
 
-### Deux exceptions à « rien d'Apple dans le dépôt », assumées
+### Two acknowledged exceptions to "nothing Apple in the repository"
 
-1. **Le certificat racine public d'Apple**, dans
-   `src/LuminaMonitor.Core/Ddi/Tss.cs`. C'est le fichier
-   `AppleIncRootCertificate.cer` publié par Apple sur
-   <https://www.apple.com/certificateauthority/>, destiné par nature à être
-   distribué et vérifié : un certificat racine n'a de sens que public. Il ne
-   contient aucun secret — la clé privée reste chez Apple — et son empreinte est
-   vérifiée au chargement.
-2. **197 octets de gabarit de négociation média**, dans
-   `src/LuminaMonitor.Core/Media/MediaOffer.cs` (`SelfCheck`). Ce sont les
-   octets d'**un message de protocole** relevé sur le fil, conservés uniquement
-   comme vecteur de test : le constructeur d'offre doit les reproduire à
-   l'octet près. Ce n'est pas du code d'Apple, ni un extrait de binaire : c'est
-   une donnée d'interopérabilité, du même ordre qu'un numéro de port ou qu'un
-   en-tête de format.
+1. **Apple's public root certificate**, in
+   `src/LuminaMonitor.Core/Ddi/Tss.cs`. This is the
+   `AppleIncRootCertificate.cer` file published by Apple at
+   <https://www.apple.com/certificateauthority/>, meant by its very nature
+   to be distributed and verified: a root certificate only makes sense
+   public. It contains no secret — the private key stays with Apple — and
+   its fingerprint is checked on load.
+2. **197 bytes of media negotiation template**, in
+   `src/LuminaMonitor.Core/Media/MediaOffer.cs` (`SelfCheck`). These are the
+   bytes of **a protocol message** captured off the wire, kept purely as a
+   test fixture: the offer builder must reproduce them byte for byte. This
+   isn't Apple's code, nor an extract of a binary: it's interoperability
+   data, of the same kind as a port number or a format header.
 
-## Surface d'attaque, en clair
+## Attack surface, plainly
 
-- L'application ouvre une **pile TCP/IPv6 écrite à la main** qui parse ce que le
-  téléphone envoie, ainsi que des lecteurs de formats (UDIF, HFS+, APFS, xar,
-  xz) qui parsent des fichiers que l'utilisateur choisit. Ce sont du code C#
-  géré, mais qui utilise `AllowUnsafeBlocks` pour la conversion d'image ; un
-  fichier d'archive malveillant ou un pair hostile est un vecteur plausible.
-  **N'ouvrez que des archives Apple téléchargées depuis votre propre compte
-  développeur.**
-- Le décodage vidéo passe par **Media Foundation**, le décodeur H.264 de
-  Windows.
-- L'application **n'a pas besoin de droits administrateur** et ne doit pas être
-  lancée avec.
+- The application opens a **hand-written TCP/IPv6 stack** that parses what
+  the phone sends, as well as format readers (UDIF, HFS+, APFS, xar, xz)
+  that parse files the user chooses. This is managed C# code, but it uses
+  `AllowUnsafeBlocks` for image conversion; a malicious archive file or a
+  hostile peer is a plausible attack vector. **Only open Apple archives
+  downloaded from your own developer account.**
+- Video decoding goes through **Media Foundation**, Windows's H.264
+  decoder.
+- The application **does not need administrator rights** and should not be
+  launched with them.
 
-## Signaler une faille
+## Reporting a vulnerability
 
-Ouvrez une **issue GitHub** décrivant le problème, ou — s'il permet d'attaquer
-un appareil ou un utilisateur — utilisez le **rapport de vulnérabilité privé**
-de GitHub (onglet *Security* → *Report a vulnerability*) plutôt qu'une issue
-publique, et laissez un délai raisonnable avant divulgation.
+Open a **GitHub issue** describing the problem, or — if it allows attacking
+a device or a user — use GitHub's **private vulnerability report** (the
+*Security* tab → *Report a vulnerability*) instead of a public issue, and
+allow a reasonable delay before disclosure.
 
-Merci de **ne pas joindre `lumina.log` tel quel** : relisez-le d'abord, ou
-retirez-en la ligne `UDID …` et le nom de l'appareil.
+Please **do not attach `lumina.log` as-is**: read it first, or strip out the
+`UDID …` line and the device name.

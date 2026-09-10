@@ -1,193 +1,197 @@
+**English** · [Français](INSTALLATION.fr.md)
+
 # Installation
 
-Ce guide part d'un PC nu et s'arrête quand l'écran de l'iPhone est dans une
-fenêtre Windows et répond à la souris. Compte **dix minutes**, dont la moitié
-en téléchargement chez Apple.
+This guide starts from a bare PC and ends when the iPhone's screen sits in a
+Windows window and responds to the mouse. Budget **ten minutes**, half of it
+downloading from Apple.
 
-Pour compiler soi-même plutôt que télécharger, voir [`BUILD.md`](BUILD.md).
+To build it yourself instead of downloading, see [`BUILD.md`](BUILD.md).
 
-## Prérequis
+## Prerequisites
 
-| | Quoi | Où |
+| | What | Where |
 |---|---|---|
-| PC | Windows 10 ou 11, **x64** | |
-| PC | App **Appareils Apple** — elle apporte le multiplexeur USB et l'appairage, et c'est le **seul** composant Apple installé sur le PC | [Microsoft Store](https://apps.microsoft.com/detail/9np83lwlpz9k) |
-| iPhone | **iOS 27 ou plus récent** (sur iOS 26, seuls les boutons du châssis passent) | [Mettre à jour l'iPhone](https://support.apple.com/fr-fr/HT204204) |
-| iPhone | **Mode développeur** activé, dans Réglages > Confidentialité et sécurité | [Activer le mode développeur](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device) |
-| Fichier | une archive **Xcode 27** (`Xcode_27*.xip`, ~2 Go) **ou** un composant « Device Support » (`.dmg`, ~100 Mo) | [developer.apple.com/download/all](https://developer.apple.com/download/all/) — compte Apple gratuit |
+| PC | Windows 10 or 11, **x64** | |
+| PC | **Apple Devices** app — it brings the USB multiplexer and pairing, and it's the **only** Apple component installed on the PC | [Microsoft Store](https://apps.microsoft.com/detail/9np83lwlpz9k) |
+| iPhone | **iOS 27 or newer** (on iOS 26, only the chassis buttons work) | [Update your iPhone](https://support.apple.com/en-us/HT204204) |
+| iPhone | **Developer Mode** enabled, under Settings > Privacy & Security | [Enable Developer Mode](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device) |
+| File | an **Xcode 27** archive (`Xcode_27*.xip`, ~2 GB) **or** a "Device Support" component (`.dmg`, ~100 MB) | [developer.apple.com/download/all](https://developer.apple.com/download/all/) — free Apple account |
 
-Aucun runtime .NET à installer : l'exécutable téléchargé contient le sien.
+No .NET runtime to install: the downloaded executable carries its own.
 
-### Pourquoi une archive Apple
+### Why an Apple archive
 
-L'**image développeur** est un binaire signé par Apple ; c'est elle qui apporte
-au téléphone les services de pilotage (HID, affichage). Elle n'est **pas** dans
-ce dépôt et n'y sera jamais : chacun l'extrait de son propre téléchargement,
-avec l'outil intégré à l'app. Le fichier reste chez toi.
+The **Developer Disk Image** is a binary signed by Apple; it's what brings
+the control services (HID, display) to the phone. It is **not** in this
+repository and never will be: everyone extracts it from their own download,
+with the tool built into the app. The file stays on your machine.
 
-Le `.dmg` « Device Support » est le chemin court quand il est proposé pour ta
-version d'iOS : 100 Mo au lieu de 2 Go, et quelques secondes d'extraction au
-lieu d'une minute.
+The Device Support `.dmg` is the shortcut when it's offered for your iOS
+version: 100 MB instead of 2 GB, and a few seconds of extraction instead of a
+minute.
 
-## 1. Télécharger la version
+## 1. Download the release
 
-Sur la page **Releases** du dépôt, prends
-`LuminaMonitor-<version>-win-x64.zip`, décompresse-le où tu veux — un dossier
-dans `Documents` fait l'affaire. Deux exécutables dedans :
+On the repository's **Releases** page, grab
+`LuminaMonitor-<version>-win-x64.zip` and unzip it wherever you like — a
+folder under `Documents` works fine. Two executables inside:
 
-- `LuminaMonitor.App.exe` — la fenêtre ;
-- `LuminaMonitor.UsbProbe.exe` — la sonde de diagnostic, à garder pour les
-  mauvais jours.
+- `LuminaMonitor.App.exe` — the window;
+- `LuminaMonitor.UsbProbe.exe` — the diagnostic probe, worth keeping for bad
+  days.
 
-Rien ne s'installe, rien ne s'écrit dans la base de registre. Pour désinstaller,
-supprime le dossier et `%APPDATA%\LuminaMonitor`.
+Nothing installs, nothing is written to the registry. To uninstall, delete
+the folder and `%APPDATA%\LuminaMonitor`.
 
-> Au premier lancement, Windows SmartScreen peut afficher « Windows a protégé
-> votre ordinateur » : l'exécutable n'est pas signé par un certificat commercial.
-> **Informations complémentaires** > **Exécuter quand même**.
+> On first launch, Windows SmartScreen may show "Windows protected your PC":
+> the executable isn't signed with a commercial certificate. **More info** >
+> **Run anyway**.
 
-## 2. Premier lancement : l'image développeur
+## 2. First launch: the Developer Disk Image
 
-La fenêtre s'ouvre et demande l'archive Apple. Choisis ton `.xip` Xcode, ton
-`.dmg` Device Support ou le `XcodeSystemResources.pkg` que tu en aurais déjà
-tiré. L'app fait le reste toute seule — xar → pbzx/xz → cpio → UDIF → HFS+/APFS
-— et pose une copie fidèle de l'arbre `Restore/` dans :
+The window opens and asks for the Apple archive. Pick your Xcode `.xip`,
+your Device Support `.dmg`, or the `XcodeSystemResources.pkg` you already
+pulled from one. The app does the rest on its own — xar → pbzx/xz → cpio →
+UDIF → HFS+/APFS — and lays down a faithful copy of the `Restore/` tree in:
 
 ```
 %APPDATA%\LuminaMonitor\ddi\<build>
 ```
 
-Compte **une minute environ** pour un `.xip` (58 s mesurées sur Xcode 27 bêta 6,
-4 Go parcourus, progression dans la barre d'état), quelques secondes pour un
-`.dmg`. **C'est une fois par version d'iOS** : le chemin est retenu dans les
-réglages, les lancements suivants vont droit au miroir.
+Budget **about a minute** for a `.xip` (58 s measured on Xcode 27 beta 6,
+4 GB scanned, progress shown in the status bar), a few seconds for a `.dmg`.
+**This happens once per iOS version**: the path is remembered in settings,
+and later launches go straight to the mirror.
 
-## 3. Brancher, déverrouiller
+## 3. Plug in, unlock
 
-1. Branche l'iPhone en USB-C. Au tout premier branchement, le téléphone demande
-   « Se fier à cet ordinateur » : réponds **oui**, et tape ton code
-   ([aide Apple](https://support.apple.com/fr-fr/102518)).
-2. **Déverrouille l'écran** et laisse-le déverrouillé le temps que la session
-   s'ouvre : iOS refuse de monter l'image développeur sur un téléphone
-   verrouillé.
-3. Lance `LuminaMonitor.App.exe`. La barre d'état raconte la montée : image
-   montée, tunnel ouvert, flux vidéo. Au bout de quelques secondes, l'écran du
-   téléphone apparaît dans un châssis dessiné à ses cotes.
+1. Plug the iPhone in over USB-C. On the very first connection, the phone
+   asks to "Trust This Computer": answer **yes**, and enter your passcode
+   ([Apple support](https://support.apple.com/en-us/102518)).
+2. **Unlock the screen** and leave it unlocked while the session opens: iOS
+   refuses to mount the Developer Disk Image on a locked phone.
+3. Launch `LuminaMonitor.App.exe`. The status bar narrates the setup: image
+   mounted, tunnel open, video stream. Within a few seconds, the phone's
+   screen appears inside a chassis drawn to its exact dimensions.
 
-Si l'app dit que le multiplexeur Apple n'est pas lancé, le bouton **Ouvrir
-Appareils Apple** du bandeau s'en charge.
+If the app says the Apple multiplexer isn't running, the banner's **Open
+Apple Devices** button takes care of it.
 
 ## 4. Usage
 
-| Geste | Effet sur le téléphone |
+| Gesture | Effect on the phone |
 |---|---|
-| **Clic dans l'image** | prend la main : la souris appartient au téléphone |
-| **Ctrl + Alt gauche** | rend la souris au PC (l'Alt *gauche* : Alt droit + Ctrl fabrique AltGr, dont un clavier français a besoin) |
-| **Clic gauche** | tap à la coordonnée exacte — pointeur **absolu**, là où tu cliques le doigt se pose |
-| **Maintien** | appui long (le tap est différé de 180 ms, le temps de voir ce que fait la souris) |
-| **Cliquer-glisser** | glissement du doigt sur le verre |
-| **Clic droit** | bouton principal, retour à l'accueil |
-| **Molette** | défilement, un cran = un glissement de doigt ; réglage `invertWheel` pour l'autre sens |
-| **Clavier** | tout part sur le clavier virtuel du téléphone, accents et touches mortes compris |
-| **Boutons dessinés sur le châssis** | volume haut/bas, muet, bouton latéral — ce sont les vrais boutons du téléphone qui sont pressés ; le bouton cliqué s'illumine un quart de seconde |
-| **Bouton à l'emplacement du bouton Action** | coupe et rétablit le **son** (touche Muet). Le bouton Action lui-même — la bascule sonnerie/silencieux — n'est pas atteignable par ce protocole, et l'app ne fait pas semblant |
-| **Bouton latéral** | éteint l'écran ; quand l'écran est éteint, le même bouton le rallume (voir « Verrouiller, déverrouiller » plus bas) |
-| **F2** | envoie le presse-papiers Windows **dans le presse-papiers de l'iPhone** (⌘V ou appui long pour coller sur le téléphone). F2 et pas Ctrl+V : pendant le pilotage, Ctrl+V partirait au téléphone, qui attend Cmd+V |
-| **F4** | récupère le presse-papiers de l'iPhone dans celui de Windows |
-| **F3** | affiche les compteurs : images/s, latence, rapports envoyés, erreurs |
+| **Click in the image** | takes control: the mouse now belongs to the phone |
+| **Left Ctrl + Alt** | returns the mouse to the PC (the *left* Alt: right Alt + Ctrl builds AltGr, which a French keyboard needs) |
+| **Left click** | taps the exact coordinate — **absolute** pointer, the finger lands where you click |
+| **Hold** | long press (the tap is delayed by 180 ms, long enough to see what the mouse is doing) |
+| **Click and drag** | a finger swipe on the glass |
+| **Right click** | the Home/main button, back to the home screen |
+| **Wheel** | scrolling, one notch = one finger swipe; `invertWheel` setting for the other direction |
+| **Keyboard** | everything goes to the phone's virtual keyboard, accents and dead keys included |
+| **Buttons drawn on the chassis** | volume up/down, mute, side button — the real phone buttons get pressed; the clicked button lights up for a quarter second |
+| **Button at the Action button's position** | toggles **mute** (the Mute switch). The Action button itself — the ringer/silent toggle — isn't reachable through this protocol, and the app doesn't pretend otherwise |
+| **Side button** | turns the screen off; while the screen is off, the same button turns it back on (see "Lock, unlock" below) |
+| **F2** | sends the Windows clipboard **into the iPhone's clipboard** (⌘V or a long press to paste on the phone). F2, not Ctrl+V: while in control, Ctrl+V would go to the phone, which expects Cmd+V |
+| **F4** | pulls the iPhone's clipboard into Windows's |
+| **F3** | shows the counters: frames/s, latency, reports sent, errors |
 
-Les deux boutons **Vers l'iPhone** et **Depuis l'iPhone** de la barre du bas font
-la même chose que F2 et F4.
+The **Paste** and **Clipboard** buttons in the bottom bar do the same thing
+as F2 and F4.
 
-### Presse-papiers
+The interface follows the Windows display language (English or French) and
+can be forced in the settings.
 
-Le téléphone a un presse-papiers et il s'écrit par le câble : le texte arrive
-**entier et instantané**, accents et emoji compris, et se colle ensuite sur le
-téléphone comme n'importe quel copier-coller entre appareils Apple. Si le service
-refuse (iOS plus ancien, service absent de l'annuaire), l'app retombe sur
-l'ancienne méthode — taper le texte au clavier virtuel, caractère par caractère —
-et **le dit dans la barre d'état**, pour qu'un collage lent ne passe pas pour le
-rapide.
+### Clipboard
 
-Dans l'autre sens, seul le **texte** revient. Un presse-papiers de téléphone tient
-très souvent une photo : l'app l'annonce alors (« une image, public.png, 1,2 Mo —
-non transférée ») plutôt que de rendre du vide qui se lirait « il n'y avait rien ».
+The phone has a clipboard, and it's written over the cable: text arrives
+**whole and instantly**, accents and emoji included, and then pastes on the
+phone like any copy-paste between Apple devices. If the service refuses
+(older iOS, service missing from the directory), the app falls back to the
+old method — typing the text on the virtual keyboard, character by
+character — and **says so in the status bar**, so a slow paste doesn't pass
+for a fast one.
 
-Rien ne part tout seul : **aucune synchronisation automatique**, dans aucun sens.
-Le contenu du presse-papiers n'est jamais écrit dans le journal, seulement le
-nombre de caractères.
+In the other direction, only **text** comes back. A phone's clipboard very
+often holds a photo: the app then announces it ("an image, public.png,
+1.2 MB — not transferred") rather than returning emptiness that would read as
+"there was nothing."
 
-### Verrouiller, déverrouiller
+Nothing happens on its own: **no automatic sync**, in either direction. The
+clipboard's content is never written to the log, only the character count.
 
-Un clic sur le bouton latéral dessiné **éteint l'écran** du téléphone. L'app
-affiche alors un bandeau « iPhone verrouillé — l'écran est éteint, le flux tourne
-au ralenti, rien n'est cassé » et **arrête de traiter ça comme une panne**. Un
-second clic (ou le bouton « Réveiller l'écran » du bandeau) rallume l'écran et
-**l'image revient d'elle-même en moins d'une seconde**.
+### Lock, unlock
 
-Le bandeau apparaît aussi quand c'est le **téléphone** qui se verrouille tout
-seul, ou ta main sur le vrai bouton : l'app le reconnaît au débit du flux, pas à
-ce qu'elle a commandé.
+Clicking the drawn side button **turns the phone's screen off**. The app
+then shows a banner, "iPhone locked — the screen is off, the stream idles,
+nothing is broken," and **stops treating that as a failure**. A second click
+(or the banner's **Wake screen** button) turns the screen back on, and
+**the image comes back on its own in under a second**.
 
-Mesuré le 9 septembre 2026 : le flux ne meurt pas pendant le verrouillage, il
-tombe à deux paquets et une image entièrement noire par seconde. Rien n'est à
-remonter, aucun reset d'image n'est déclenché, et la session reste ouverte.
+The banner also shows up when it's the **phone** locking itself, or your
+hand on the real button: the app recognizes it from the stream's bitrate,
+not from what it commanded.
 
-**Ce que l'app ne peut pas faire :** déverrouiller. Réveiller l'écran est un
-appui de bouton et marche toujours ; ce qui est derrière est l'écran de
-verrouillage, et le franchir demande **Face ID** — donc ton visage devant le
-téléphone — ou **le code**. Il n'existe aucun moyen de contourner ça, et l'app
-n'essaie pas de faire croire le contraire.
+Measured on September 9, 2026: the stream doesn't die during lock, it drops
+to two packets and one fully black frame per second. Nothing needs
+remounting, no image reset fires, and the session stays open.
 
-Si tu veux quand même déverrouiller depuis le PC, tu peux écrire ton code dans les
-réglages :
+**What the app cannot do: unlock.** Waking the screen is a button press and
+always works; what's behind it is the lock screen, and getting past it
+requires **Face ID** — so your face in front of the phone — or **the
+passcode**. There's no way around that, and the app doesn't pretend
+otherwise.
+
+If you still want to unlock from the PC, you can write your passcode into
+settings:
 
 ```json
 "unlockCode": "123456"
 ```
 
-L'app balaie alors l'écran de verrouillage vers le haut et tape le code au clavier
-virtuel. **Le compromis est écrit noir sur blanc :** ce fichier n'est pas chiffré,
-donc quiconque peut lire `%APPDATA%\LuminaMonitor\settings.json` peut lire le code
-de ton téléphone. Vide par défaut, et vide est le bon choix pour presque tout le
-monde. Le code n'apparaît jamais dans le journal — les lignes d'état ne comptent
-que le nombre de caractères.
+The app then swipes the lock screen up and types the passcode on the virtual
+keyboard. **The trade-off is spelled out plainly:** this file isn't
+encrypted, so anyone who can read `%APPDATA%\LuminaMonitor\settings.json` can
+read your phone's passcode. Empty by default, and empty is the right choice
+for almost everyone. The passcode never appears in the log — status lines
+only count the number of characters.
 
-Les réglages (sens de la molette, couleur du châssis, position de la fenêtre,
-`unlockCode`) vivent dans `%APPDATA%\LuminaMonitor\settings.json`. À part
-`unlockCode` si tu le remplis, rien de secret n'y est écrit : l'appairage
-appartient à Apple, l'app se contente de le lire.
+Settings (wheel direction, chassis color, window position, `unlockCode`)
+live in `%APPDATA%\LuminaMonitor\settings.json`. Aside from `unlockCode` if
+you fill it in, nothing secret is written there: pairing belongs to Apple,
+the app only reads it.
 
-## Dépannage
+## Troubleshooting
 
-**Le journal d'abord** : `%APPDATA%\LuminaMonitor\lumina.log`. Il est tenu à
-chaque exécution, pas seulement en diagnostic — transitions d'état, lignes du
-protocole, décisions de reconnexion, et toute exception non gérée avec sa pile.
-Rotation à 5 Mo vers `lumina.1.log`. C'est ce fichier qu'il faut joindre à une
-issue (extrait uniquement, et **sans l'identifiant de l'appareil**).
+**The log first**: `%APPDATA%\LuminaMonitor\lumina.log`. It's kept on every
+run, not just when diagnosing — state transitions, protocol lines,
+reconnection decisions, and every unhandled exception with its stack trace.
+Rotates at 5 MB to `lumina.1.log`. This is the file to attach to an issue
+(an excerpt only, and **without the device identifier**).
 
-| Symptôme | Quoi faire |
+| Symptom | What to do |
 |---|---|
-| **Image figée** | Le service d'affichage du téléphone s'est tu. L'app démonte et remonte l'image toute seule — c'est le seul remède constaté ; débrancher le câble ne suffit pas. Laisse-la faire, elle dit « Relance du miroir… ». |
-| **« Redémarre l'iPhone »** | Trois remontées d'image sans flux rétabli. Là, il faut vraiment redémarrer le téléphone. |
-| **« Le multiplexeur Apple ne répond plus »** | Il écoute mais reste muet cinq secondes. **Relance l'app Appareils Apple**, ou rebranche le câble. |
-| **« Le multiplexeur Apple n'est pas lancé »** | Rien n'écoute sur `127.0.0.1:27015` : ouvre **Appareils Apple** (bouton du bandeau) ou branche l'iPhone, le multiplexeur démarre à la demande. |
-| **« Appareil non appairé »** | Ouvre Appareils Apple et réponds « Se fier à cet ordinateur » sur le téléphone. |
-| **« Mode développeur inactif »** | Réglages > Confidentialité et sécurité > Mode développeur. Le téléphone redémarre. |
-| **« Déverrouille l'iPhone »** | Le montage attend un écran déverrouillé ; l'app réessaie toute seule. |
-| **Après un redémarrage du téléphone** | L'image développeur est à remonter — iOS l'oublie à chaque démarrage. L'app le fait seule, ça coûte quelques secondes. |
-| **Rien ne démarre, ou tout se fige** | **Une seule session à la fois** : le service d'affichage du téléphone n'en sert qu'une. Deux fenêtres, ou la sonde pendant que l'app tourne, et c'est le gel. Ferme l'autre. |
-| **Le miroir refuse de repartir tout de suite** | Entre deux sessions, le téléphone refuse un nouveau flux **pendant une à deux minutes**, et chaque tentative refusée renouvelle le refus. L'app espace ses essais (5 s, doublés, plafond 30 s). Attends, n'insiste pas. |
-| **L'extraction refuse l'archive** | Le message dit lequel des trois cas : fichier inattendu, archive incomplète (retélécharger), ou paquet des ressources absent (ce n'est pas une archive Xcode 27). |
-| **Le toucher ne passe pas, les boutons oui** | C'est iOS 26 : `CoreDeviceError 9021`, « Remote control requires iOS 27.0 or later ». Il faut iOS 27. |
-| **« Service presse-papiers indisponible »** | Le service `pasteboardservice` n'a pas répondu. L'app est retombée sur la frappe caractère par caractère : le texte arrive quand même, plus lentement, et sans ce que le clavier US ne sait pas épeler. |
-| **Bandeau « iPhone verrouillé » qui reste** | L'écran est éteint — que ce soit l'app, ta main ou le verrouillage automatique du téléphone. Clique **Réveiller l'écran** ; s'il reste verrouillé après ça, c'est Face ID ou le code, sur le téléphone. |
+| **Frozen image** | The phone's display service went quiet. The app unmounts and remounts the image on its own — the only remedy observed; unplugging the cable isn't enough. Let it work, it says "Restarting the mirror…" |
+| **"Restart the iPhone"** | Three image remounts without the stream recovering. At that point, the phone really needs a restart. |
+| **"Apple multiplexer stopped responding"** | It's listening but stays silent for five seconds. **Restart the Apple Devices app**, or replug the cable. |
+| **"Apple multiplexer not running"** | Nothing is listening on `127.0.0.1:27015`: open **Apple Devices** (banner button) or plug in the iPhone, the multiplexer starts on demand. |
+| **"Device not paired"** | Open Apple Devices and tap "Trust This Computer" on the phone. |
+| **"Developer Mode disabled"** | Settings > Privacy & Security > Developer Mode. The phone reboots. |
+| **"Unlock the iPhone"** | Mounting is waiting for an unlocked screen; the app retries on its own. |
+| **After restarting the phone** | The Developer Disk Image needs remounting — iOS forgets it on every boot. The app does this on its own, costing a few seconds. |
+| **Nothing starts, or everything freezes** | **One session at a time**: the phone's display service serves only one. Two windows, or the probe while the app is running, and it's a freeze. Close the other one. |
+| **The mirror refuses to come back right away** | Between two sessions, the phone refuses a new stream **for one to two minutes**, and every refused attempt renews the refusal. The app spaces out its retries (5 s, doubling, capped at 30 s). Wait, don't push. |
+| **Extraction refuses the archive** | The message says which of three cases: unexpected file, incomplete archive (redownload), or the resources package missing (this isn't an Xcode 27 archive). |
+| **Touch doesn't work, buttons do** | That's iOS 26: `CoreDeviceError 9021`, "Remote control requires iOS 27.0 or later." You need iOS 27. |
+| **"Clipboard service unavailable"** | The `pasteboardservice` didn't answer. The app fell back to character-by-character typing: the text still arrives, more slowly, and without anything the US keyboard layout can't spell. |
+| **"iPhone locked" banner won't go away** | The screen is off — whether from the app, your hand, or the phone's own auto-lock. Click **Wake screen**; if it's still locked afterward, that's Face ID or the passcode, on the phone. |
 
-Pour un rapport de dix secondes plutôt qu'une capture d'écran :
+For a ten-second report instead of a screenshot:
 
 ```
 LuminaMonitor.App.exe --diagnostic 10
 ```
 
-La fenêtre s'ouvre, tourne dix secondes, écrit une ligne de compteurs par
-seconde dans le journal et se ferme seule.
+The window opens, runs for ten seconds, writes one line of counters per
+second to the log, and closes itself.

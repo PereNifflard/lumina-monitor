@@ -119,8 +119,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           Remove-Item -Path publish/*.pdb -Force -ErrorAction SilentlyContinue
-          Copy-Item -Path LICENSE, README.md -Destination publish/
-          Copy-Item -Path docs/INSTALLATION.md -Destination publish/
+          Copy-Item -Path LICENSE, README.md, README.fr.md -Destination publish/
+          Copy-Item -Path docs/INSTALLATION.md, docs/INSTALLATION.fr.md -Destination publish/
           $zip = "LuminaMonitor-$env:VERSION-win-x64.zip"
           Compress-Archive -Path publish/* -DestinationPath $zip -Force
           Add-Content -Path $env:GITHUB_OUTPUT -Value "zip=$zip"

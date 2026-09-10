@@ -28,12 +28,19 @@ public static class DdiExtractor
     /// <summary>What one extraction produced.</summary>
     public sealed record Result(DdiSource? Source, bool ManifestPresent, bool ManifestParsed, string? ProductBuildVersion, int BuildIdentities);
 
-    public static Result Extract(string sourcePath, string outDir, IProgress<string>? progress = null)
+    /// <param name="progress">The journal's lines, in French, as they come.</param>
+    /// <param name="gigabytesScanned">
+    /// How far through an Xcode archive the walk is, in whole gigabytes, for a
+    /// status bar to word in its own language — the one progress worth showing
+    /// a person, since it is the two minutes they wait for.
+    /// </param>
+    public static Result Extract(string sourcePath, string outDir, IProgress<string>? progress = null,
+                                 IProgress<long>? gigabytesScanned = null)
     {
         void Say(string line) => progress?.Report(line);
 
         if (!File.Exists(sourcePath))
-            throw new LuminaException($"{Path.GetFileName(sourcePath)} : fichier introuvable.");
+            throw new LuminaException(CoreTexts.Current.FileNotFound(Path.GetFileName(sourcePath)));
 
         Directory.CreateDirectory(outDir);
         string ddiDmg = Path.Combine(outDir, "iOS_DDI.dmg");
@@ -45,7 +52,7 @@ public static class DdiExtractor
         using (var probe = File.OpenRead(sourcePath))
         {
             if (probe.Length < 512)
-                throw new LuminaException($"{Path.GetFileName(sourcePath)} : fichier trop court pour être une archive Apple ({probe.Length:N0} octets) — téléchargement incomplet ?");
+                throw new LuminaException(CoreTexts.Current.FileTooShort(Path.GetFileName(sourcePath), probe.Length));
             probe.ReadExactly(sourceMagic, 0, sourceMagic.Length);
         }
         bool sourceIsArchive = System.Text.Encoding.ASCII.GetString(sourceMagic) == "xar!";
@@ -69,13 +76,13 @@ public static class DdiExtractor
             else if (archive.Entries.Any(e => e.Name == "Content"))
             {
                 archive.Dispose();
-                liftedPackage = LiftPackageFromXcode(sourcePath, progress);
+                liftedPackage = LiftPackageFromXcode(sourcePath, progress, gigabytesScanned);
                 pkg = Xar.Open(liftedPackage);
             }
             else
             {
                 archive.Dispose();
-                throw new LuminaException($"{Path.GetFileName(sourcePath)} : archive xar sans Content ni Payload — ce n'est ni une archive Xcode ni un paquet Apple.");
+                throw new LuminaException(CoreTexts.Current.XarWithoutContent(Path.GetFileName(sourcePath)));
             }
         }
         else
@@ -92,8 +99,7 @@ public static class DdiExtractor
             catch (Exception exception) when (exception is not LuminaException)
             {
                 sourceImage?.Dispose();
-                throw new LuminaException($"{Path.GetFileName(sourcePath)} : fichier inattendu — attendu une archive Xcode (.xip),"
-                    + $" un composant Device Support (.dmg) ou un paquet (.pkg). Détail : {exception.Message}", exception);
+                throw new LuminaException(CoreTexts.Current.UnexpectedFile(Path.GetFileName(sourcePath), exception.Message), exception);
             }
         }
 
@@ -221,14 +227,15 @@ public static class DdiExtractor
     /// directory is <c>Xcode.app</c> in a release and <c>Xcode-beta.app</c> in
     /// a beta, and the archive prefixes both with a <c>.</c> of its own.</para>
     /// </remarks>
-    public static CpioReader.Entry? CopyFromXcodeArchive(string xipPath, string entrySuffix, string targetPath, IProgress<string>? progress = null)
+    public static CpioReader.Entry? CopyFromXcodeArchive(string xipPath, string entrySuffix, string targetPath, IProgress<string>? progress = null,
+                                                         IProgress<long>? gigabytesScanned = null)
     {
         void Say(string line) => progress?.Report(line);
 
         Say($"Archive Xcode : {Path.GetFileName(xipPath)} ({new FileInfo(xipPath).Length / (double)(1L << 30):N1} Go) — environ deux minutes.");
         using var xar = Xar.Open(xipPath);
         var content = xar.Entries.FirstOrDefault(e => e.Name == "Content")
-            ?? throw new LuminaException($"{Path.GetFileName(xipPath)} : pas d'entrée Content — ce n'est pas une archive Xcode.");
+            ?? throw new LuminaException(CoreTexts.Current.NoContentEntry(Path.GetFileName(xipPath)));
 
         using var pbzx = new PbzxStream(xar.Open(content));
         var cpio = new CpioReader(pbzx);
@@ -243,6 +250,7 @@ public static class DdiExtractor
                 {
                     announced = bytes >> 30;
                     Say($"Lecture de l'archive Xcode… {announced} Go parcourus");
+                    gigabytesScanned?.Report(announced);
                 }
                 if (!entry.Name.EndsWith(entrySuffix, StringComparison.Ordinal))
                     continue;
@@ -257,8 +265,8 @@ public static class DdiExtractor
             // The xz block checksums are the archive's own integrity check, and
             // a download that stopped short trips them: say so in those terms
             // rather than in the decoder's.
-            throw new LuminaException($"{Path.GetFileName(xipPath)} : archive incomplète ou abîmée"
-                + $" après {bytes / (double)(1L << 30):N1} Go — retélécharge-la chez Apple. Détail : {exception.Message}", exception);
+            throw new LuminaException(CoreTexts.Current.ArchiveDamaged(
+                Path.GetFileName(xipPath), bytes / (double)(1L << 30), exception.Message), exception);
         }
         Say($"{entries:N0} entrées parcourues, {entrySuffix} absent.");
         return null;
@@ -274,7 +282,7 @@ public static class DdiExtractor
     /// forwards — so the ~145 MB lands on disk and the caller deletes it when
     /// it has served.
     /// </remarks>
-    private static string LiftPackageFromXcode(string xipPath, IProgress<string>? progress)
+    private static string LiftPackageFromXcode(string xipPath, IProgress<string>? progress, IProgress<long>? gigabytesScanned)
     {
         string scratch = Path.Combine(Path.GetTempPath(), "LuminaMonitor-xcode-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(scratch);
@@ -282,7 +290,7 @@ public static class DdiExtractor
 
         try
         {
-            if (CopyFromXcodeArchive(xipPath, XcodeResourcesPackage, target, progress) is not null)
+            if (CopyFromXcodeArchive(xipPath, XcodeResourcesPackage, target, progress, gigabytesScanned) is not null)
                 return target;
         }
         catch (Exception)
@@ -293,8 +301,7 @@ public static class DdiExtractor
         }
 
         try { Directory.Delete(scratch, recursive: true); } catch (Exception) { }
-        throw new LuminaException($"{Path.GetFileName(xipPath)} : XcodeSystemResources.pkg introuvable"
-            + " — cette archive n'est pas celle qui porte les images développeur (attendu Xcode 27).");
+        throw new LuminaException(CoreTexts.Current.SystemResourcesMissing(Path.GetFileName(xipPath)));
     }
 
     /// <summary>A package Payload is a cpio wrapped in pbzx (modern) or gzip (older); pick by magic.</summary>

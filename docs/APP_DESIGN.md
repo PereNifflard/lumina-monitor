@@ -1,170 +1,193 @@
-# Fenêtre de pilotage — conception (étape 3)
+# Control window — design (stage 3)
 
-Base : l'app WPF d'un projet antérieur du même auteur, qui affichait le même châssis mais passait par un
-Raspberry Pi servant de pont Bluetooth. Elle est reprise dans `src/LuminaMonitor.App` et rebranchée sur
-`LuminaMonitor.Core`. Tout ce qui parlait au Raspberry Pi disparaît ; la logique d'interface (châssis,
-géométrie, rendu, tap différé, réglages) est conservée.
+**English** · [Français](APP_DESIGN.fr.md)
 
-## Ce qui est repris tel quel
-- `MainWindow.xaml` (châssis, île, boutons dessinés, panneau de diagnostic), `DeviceGeometry.cs` (géométrie physique,
-  `FitPicture`, `Detect` de l'orientation par les pixels), le rendu (`WriteableBitmap` Bgr32, échange `_pending`/`_present`
-  sous verrou — le tampon échangé porte du NV12, converti dans le tampon arrière au tick —, `CompositionTarget.Rendering`,
-  `PictureScale`), le tap différé (`TapDeferMs` 180, `TapPressMs` 40,
-  `TapSlopWindowPx` 5, `FlushPendingPress`, `OnLostMouseCapture`), `Settings.cs` (JSON atomique dans `%APPDATA%\LuminaMonitor`).
-- `HidKeyboard.cs` : mapping touches Windows → usages HID physiques, modificateurs, touches mortes, `Compose` pour le collage.
+Base: the WPF app from an earlier project by the same author, which showed the same chassis but
+went through a Raspberry Pi acting as a Bluetooth bridge. It has been carried over into
+`src/LuminaMonitor.App` and rewired onto `LuminaMonitor.Core`. Everything that talked to the
+Raspberry Pi is gone; the interface logic (chassis, geometry, rendering, deferred tap, settings) is
+kept.
 
-## Ce qui est remplacé
-| Avant (Pi) | Après (Core) |
+## What is carried over as-is
+- `MainWindow.xaml` (chassis, island, drawn buttons, diagnostic panel), `DeviceGeometry.cs`
+  (physical geometry, `FitPicture`, orientation `Detect` from the pixels), the rendering
+  (`WriteableBitmap` Bgr32, `_pending`/`_present` swap under a lock — the swapped buffer carries
+  NV12, converted into the back buffer on each tick —, `CompositionTarget.Rendering`,
+  `PictureScale`), the deferred tap (`TapDeferMs` 180, `TapPressMs` 40, `TapSlopWindowPx` 5,
+  `FlushPendingPress`, `OnLostMouseCapture`), `Settings.cs` (atomic JSON in
+  `%APPDATA%\LuminaMonitor`).
+- `HidKeyboard.cs`: Windows-key-to-physical-HID-usage mapping, modifiers, dead keys, `Compose` for
+  pasting.
+
+## What is replaced
+| Before (Pi) | After (Core) |
 |---|---|
-| `VideoReceiver` → `OnFrame(bgra, w, h, stride)` | `DeviceSession.FrameDecoded(VideoFrame)` ; `frame.Bgra` (conversion NV12→BGRA paresseuse, sur le fil de décodage) puis copie dans `_pending` |
-| `InputBridgeClient` (TCP 9 octets, 0..32767) | `session.Input` : `TouchDownAsync/MoveAsync/UpAsync`, `TapAsync`, `DragAsync`, `PressButtonAsync`, `KeyboardReportAsync` (nouveau, voir plus bas) |
-| mode relatif, ré-ancrage, `Nudge`, `KeepAwake`, `PingBridge`, `KeepBridgeConnected` | supprimés (le pointeur est absolu par nature ; la session Core gère l'état) |
-| réglages `VideoPort`, `BridgeHost/Port/Token`, `AbsolutePointer` | supprimés ; ajout `DdiFolder` (dossier « copie de Restore/ »), `LastArchive` (xip ou dmg d'où la DDI a été extraite) et `UnlockCode` (vide par défaut, voir plus bas) |
-| `LatencyProbe`, `Mp4Writer` | retirés de l'app (restent dans le dépôt Pi) |
+| `VideoReceiver` → `OnFrame(bgra, w, h, stride)` | `DeviceSession.FrameDecoded(VideoFrame)`; `frame.Bgra` (lazy NV12→BGRA conversion, on the decode thread) then copied into `_pending` |
+| `InputBridgeClient` (9-byte TCP, 0..32767) | `session.Input`: `TouchDownAsync/MoveAsync/UpAsync`, `TapAsync`, `DragAsync`, `PressButtonAsync`, `KeyboardReportAsync` (new, see below) |
+| relative mode, re-anchoring, `Nudge`, `KeepAwake`, `PingBridge`, `KeepBridgeConnected` | removed (the pointer is absolute by nature; the Core session manages state) |
+| settings `VideoPort`, `BridgeHost/Port/Token`, `AbsolutePointer` | removed; `DdiFolder` added ("copy of Restore/" folder), `LastArchive` (the xip or dmg the DDI was extracted from) and `UnlockCode` (empty by default, see below) |
+| `LatencyProbe`, `Mp4Writer` | removed from the app (they stay in the Pi repository) |
 
-## Entrées → Core
-- Coordonnées : position dans le contrôle `Screen` ÷ `PictureScale` → pixels image (1328×2896 = écran entier) → normalisées 0..1.
-- Bouton gauche : tap différé conservé ; tap → `TapAsync(x, y, TapPressMs)` ; appui long/glisser → `TouchDownAsync` au point
-  d'origine puis `TouchMoveAsync` à chaque mouvement (limiter à ~120 Hz), `TouchUpAsync` au relâchement ou à la perte de capture.
-- Molette : balayage = `DragAsync` vertical de 220 px image par cran, 90 ms, au point du pointeur. Un cran vers le bas fait défiler le contenu vers le bas, donc glisse le doigt vers le HAUT ; inversé si `InvertWheel` (faux par défaut).
-- Bouton droit : `PressButtonAsync("home")`. Milieu : rien.
-- Clavier : `OnPreviewKeyDown/Up` → `HidKeyboard.Translate` → ensemble des usages tenus → `session.Input.KeyboardReportAsync(usages)`
-  (rapport 39 octets, surface 512). Ctrl+Alt gauche = quitter le pilotage.
+## Inputs → Core
+- Coordinates: position within the `Screen` control ÷ `PictureScale` → image pixels (1328×2896 =
+  whole screen) → normalised 0..1.
+- Left button: deferred tap kept; tap → `TapAsync(x, y, TapPressMs)`; long press/drag →
+  `TouchDownAsync` at the origin point then `TouchMoveAsync` on every movement (capped at ~120 Hz),
+  `TouchUpAsync` on release or on capture loss.
+- Wheel: scroll = `DragAsync` vertical, 220 image px per notch, 90 ms, at the pointer's position. A
+  notch downward scrolls the content downward, so the finger drags UPWARD; reversed if
+  `InvertWheel` (false by default).
+- Right button: `PressButtonAsync("home")`. Middle: nothing.
+- Keyboard: `OnPreviewKeyDown/Up` → `HidKeyboard.Translate` → set of held usages →
+  `session.Input.KeyboardReportAsync(usages)` (39-byte report, surface 512). Left Ctrl+Alt =
+  release control.
 
-## Boutons du châssis
-Les lamelles dessinées font une fraction de millimètre : le clic est porté par quatre rectangles
-transparents (`HitVolUp`, `HitVolDn`, `HitAction`, `HitSide`), larges comme la tranche de métal, posés
-par `ShapeButtons` en même temps que les lamelles et retournés avec l'orientation.
+## Chassis buttons
+The drawn side ridges are a fraction of a millimetre wide: the click is carried by four
+transparent rectangles (`HitVolUp`, `HitVolDn`, `HitAction`, `HitSide`), as wide as the metal
+edge, placed by `ShapeButtons` alongside the ridges and rotated along with the orientation.
 
-- `MouseLeftButtonDown` marque l'événement `Handled` **avant tout**, et les rectangles vivent hors de
-  la bordure de l'écran : un clic sur le métal n'est jamais un doigt sur le verre — le test de position
-  d'`OnMouseDown` le rattraperait de toute façon.
-- Retour visuel : `Flash` pose un `SolidColorBrush` blanc à 35 % sur le rectangle cliqué et l'anime
-  vers le transparent en 280 ms (`ColorAnimation`, brosse neuve à chaque clic — une brosse figée ne
-  s'anime pas ; brosse transparente et non `null` à l'arrivée, sinon le rectangle cesse de prendre les
-  clics). Infobulle sur chacun des quatre.
-- Volume + / − → `PressButtonAsync("volume-up" / "volume-down")` : la pastille de volume apparaît sur
-  le bord gauche, mesuré le 9 septembre (`scratchpad/chassis/10-volume-up.bmp` et `11-…`).
-- Le rectangle posé sur le **bouton Action** envoie `"mute"` — et c'est la touche **Muet du clavier
-  média** : la pastille de volume tombe à zéro puis revient au second appui. Le bouton Action
-  lui-même (bascule sonnerie/silencieux) **n'est pas atteignable** par la page Consumer ; l'infobulle
-  le dit, l'étiquette d'état dit « Muet » et non « Silencieux ».
-- **Bouton latéral : deux sens, comme sur le téléphone.** Écran allumé → `session.SleepScreenAsync()`
-  (`lock`, page Consumer 0x30 maintenu 500 ms) ; écran éteint → `session.WakeScreenAsync()` puis
+- `MouseLeftButtonDown` marks the event `Handled` **before anything else**, and the rectangles
+  live outside the screen border: a click on the metal is never a finger on the glass —
+  `OnMouseDown`'s position check would catch it anyway.
+- Visual feedback: `Flash` lays a white `SolidColorBrush` at 35% on the clicked rectangle and
+  animates it to transparent over 280 ms (`ColorAnimation`, a fresh brush per click — a frozen
+  brush does not animate; the brush must be transparent, not `null`, on arrival, or the rectangle
+  stops accepting clicks). A tooltip on each of the four.
+- Volume + / − → `PressButtonAsync("volume-up" / "volume-down")`: the volume HUD appears on the
+  left edge, measured on 9 September (`scratchpad/chassis/10-volume-up.bmp` and `11-…`).
+- The rectangle placed on the **Action button** sends `"mute"` — which is the media keyboard's
+  **Mute** key: the volume HUD drops to zero then comes back on the second press. The Action
+  button itself (ring/silent toggle) **cannot be reached** through the Consumer page; the tooltip
+  says so, and the status label reads "Muted", not "Silent".
+- **Side button: two-way, just like on the phone.** Screen on → `session.SleepScreenAsync()`
+  (`lock`, Consumer page 0x30 held 500 ms); screen off → `session.WakeScreenAsync()` then
   `UnlockAsync()`.
-- **`WakeScreenAsync` presse `home` (Consumer 0x40), pas 0x30**, et c'est une mesure et non un choix :
-  la touche Power n'est pas une bascule. Tapée 40 ms puis remaintenue 500 ms, l'image décodée est
-  restée à **0,0/255** de luminance ; `home` rallume en moins d'une seconde et les paquets
-  remontent de 2/s à 66/s. Le nom `wake` a été retiré de la table des boutons plutôt que gardé
-  comme une commande qui ne fait rien.
-- `UnlockAsync` est la limite honnête de la fonction : réveiller est un appui et marche toujours,
-  déverrouiller demande Face ID (un visage devant le téléphone) ou le code. Si `Settings.UnlockCode`
-  est rempli, la fenêtre balaie vers le haut (`DragAsync(0.5, 0.94 → 0.40, 280 ms)`, un vrai glissement :
-  un seul rapport se lit comme une téléportation), attend 900 ms et tape le code au clavier virtuel ;
-  un code de 4 ou 6 chiffres est validé par iOS tout seul, tout autre reçoit un retour chariot. Sinon
-  elle dit qu'il faut le visage ou le téléphone, et ne prétend rien avoir déverrouillé. **Le code ne
-  part jamais dans le journal** : les lignes d'état ne comptent que les caractères.
+- **`WakeScreenAsync` presses `home` (Consumer 0x40), not 0x30**, and that is a measurement, not a
+  choice: the Power key is not a toggle. Tapped for 40 ms then held for 500 ms, the decoded frame
+  stayed at **0.0/255** luminance; `home` wakes the screen in under a second and the packet rate
+  climbs back from 2/s to 66/s. The name `wake` was removed from the button table rather than kept
+  as a command that does nothing.
+- `UnlockAsync` is the function's honest limit: waking the screen is a button press and always
+  works, unlocking it needs Face ID (a face in front of the phone) or the passcode. If
+  `Settings.UnlockCode` is filled in, the window swipes up (`DragAsync(0.5, 0.94 → 0.40, 280 ms)`,
+  a real drag: a single report would read as a teleport), waits 900 ms and types the code on the
+  virtual keyboard; a 4- or 6-digit code is validated by iOS on its own, any other length gets a
+  carriage return. Otherwise it says a face or the phone is needed, and does not claim to have
+  unlocked anything. **The code never goes into the log**: the status lines only count the
+  characters.
 
-## Verrouillage et session
-**Ce que le verrouillage fait au flux, mesuré le 9 septembre 2026** (sonde `chassis-test`) : le flux
-**ne s'arrête pas**. Après `lock`, le débit tombe de 42 paquets/s et 40 images/s à **2 paquets/s et
-1 image/s d'images entièrement noires** (luminance 0,0/255), l'état reste `MediaUp`, et **aucun**
-échelon de la veille n'est déclenché — 0 demande d'image clé, 0 relance de flux, 0 reset doux — parce
-que des paquets continuent d'arriver. Il n'y a donc **rien à remonter** : `home` rallume l'écran et
-l'image revient d'elle-même en moins d'une seconde. Le garde-fou ci-dessous existe pour le cas où un
-sommeil plus long finirait par tarir complètement le flux.
+## Locking and the session
+**What locking does to the stream, measured on 9 September 2026** (probe `chassis-test`): the
+stream **does not stop**. After `lock`, the rate drops from 42 packets/s and 40 frames/s to
+**2 packets/s and 1 frame/s of fully black frames** (luminance 0.0/255), the state stays
+`MediaUp`, and **no** watchdog rung fires — 0 key-frame requests, 0 stream restarts, 0 soft
+resets — because packets keep arriving. There is therefore **nothing to escalate**: `home` wakes
+the screen and the picture comes back on its own within a second. The safeguard below exists in
+case a longer sleep were to eventually dry up the stream completely.
 
-`DeviceSession.ScreenAsleep` vaut vrai **uniquement** quand c'est cette session qui a endormi l'écran ;
-un appui de la main sur le vrai bouton ne se voit pas d'ici, et prétendre le contraire serait pire.
-Ce que ça achète : la différence entre « il n'y a plus rien à photographier » et « le miroir est
-cassé », indiscernables du compteur de paquets et qui demandent des réponses opposées.
+`DeviceSession.ScreenAsleep` is true **only** when this session is the one that put the screen to
+sleep; pressing the real button by hand is invisible from here, and claiming otherwise would be
+worse. What that buys: the difference between "there is nothing left to photograph" and "the
+mirror is broken", indistinguishable from the packet counter alone and demanding opposite
+responses.
 
-- `DeviceSession.OnStallAsync` ignore les échelons de la veille tant que `ScreenAsleep` (une image clé
-  irait à un encodeur sans rien à encoder, une relance de flux dépenserait la patience du service
-  d'affichage, un reset doux réclamerait justement le déverrouillage qui n'a pas eu lieu). Les échelons
-  ignorés sont comptés, et `WakeScreenAsync` appelle `MediaSession.RearmWatch()` : un échelon ignoré
-  laisse la veille à mi-échelle avec une issue due que personne ne rapportera jamais, donc sourde pour
-  le reste de la session.
-- **`WatchDarkScreen` (une fois par seconde) décide du bandeau, et il voit aussi les verrouillages
-  que l'app n'a pas commandés** — c'est-à-dire le cas ordinaire, le téléphone qui se verrouille tout
-  seul deux minutes après le dernier toucher. Le discriminant est le débit : un écran allumé, même
-  parfaitement immobile, envoie 40 à 60 images/s ; un écran éteint en envoie **une** ; un flux
-  vraiment mort n'en envoie **aucune**. Donc « il arrive entre 1 et 3 images/s depuis 4 secondes »
-  = écran noir, et le seuil est loin des deux bords.
-- Bandeau **`LockBanner`** au centre de l'image (« iPhone verrouillé · l'écran est éteint, le flux
-  tourne au ralenti, rien n'est cassé ») avec un bouton « Réveiller l'écran ». Le pilotage est rendu
-  (`Disengage`), la pastille passe à « verrouillé », et `WatchStream` **ne dit plus** « Flux arrêté » :
-  c'était exactement le moment où une chose normale avait l'air d'une panne. Le bandeau disparaît
-  avec la session (`Resetting`, `Faulted`, `Detached`, débranchement).
-- Le bouton latéral se décide sur `_screenDark`, pas sur `session.ScreenAsleep` : sinon un clic sur un
-  téléphone qui s'est verrouillé seul enverrait `lock` sur un écran déjà éteint. `ScreenSleepChanged`
-  ne fait que rendre la décision immédiate quand le sommeil vient d'ici (`DecideDarkScreen`, sans
-  toucher au compteur : replier une fraction de seconde dans la fenêtre d'une seconde rendrait
-  fictif le débit qu'elle mesure, et ce débit est tout l'instrument).
+- `DeviceSession.OnStallAsync` ignores the watchdog rungs while `ScreenAsleep` (a key frame would
+  go to an encoder with nothing to encode, a stream restart would spend the display service's
+  patience, a soft reset would demand exactly the unlock that has not happened). The ignored rungs
+  are counted, and `WakeScreenAsync` calls `MediaSession.RearmWatch()`: an ignored rung would leave
+  the watchdog half-armed with a debt nobody will ever report, deaf for the rest of the session.
+- **`WatchDarkScreen` (once a second) decides the banner, and it also sees the locks the app did
+  not order** — that is, the ordinary case, the phone locking itself two minutes after the last
+  touch. The discriminant is the packet rate: a screen that is on, even perfectly still, sends
+  40 to 60 frames/s; a screen that is off sends **one**; a truly dead stream sends **none**. So
+  "between 1 and 3 frames/s for the last 4 seconds" = dark screen, and the threshold sits well
+  away from both edges.
+- **`LockBanner`** at the centre of the frame ("iPhone locked · the screen is off, the stream is
+  idling, nothing is broken") with a "Wake the screen" button. Control is released (`Disengage`),
+  the status dot switches to "locked", and `WatchStream` **stops saying** "Stream stalled": that
+  was exactly the moment a normal state looked like a failure. The banner disappears with the
+  session (`Resetting`, `Faulted`, `Detached`, unplugged).
+- The side button decides based on `_screenDark`, not on `session.ScreenAsleep`: otherwise
+  clicking on a phone that locked itself would send `lock` to an already-off screen.
+  `ScreenSleepChanged` only makes the decision immediate when the sleep came from here
+  (`DecideDarkScreen`, without touching the counter: folding a fraction of a second into the
+  one-second window would make the rate it measures fictitious, and that rate is the whole
+  instrument).
 
-## Presse-papiers, dans les deux sens
-Le service `com.apple.coredevice.pasteboardservice` (dialecte XPC direct, verbes `PULL`/`SET`) est
-réimplémenté dans `Core/RemoteXpc/PasteboardService.cs` ; `DeviceSession` l'ouvre à la demande et
-raccroche après — un presse-papiers sert quelques fois par heure, un canal tenu ouvert serait une
-chose de plus à reconstruire après chaque incident.
+## Clipboard, both ways
+The `com.apple.coredevice.pasteboardservice` service (direct XPC dialect, verbs `PULL`/`SET`) is
+reimplemented in `Core/RemoteXpc/PasteboardService.cs`; `DeviceSession` opens it on demand and
+closes it afterwards — a clipboard is used a few times an hour, a channel held open would be one
+more thing to rebuild after every incident.
 
-| Geste | Chemin |
+| Gesture | Path |
 |---|---|
-| **F2** / bouton « Vers l'iPhone » | `session.WritePhoneClipboardAsync(texte)` — le texte arrive entier et instantané, accents et emoji compris. **Repli** si le service refuse : la frappe caractère par caractère d'avant (`HidKeyboard.Compose`), et la barre d'état le dit, pour qu'un collage lent et lossy ne passe pas pour le rapide. |
-| **F4** / bouton « Depuis l'iPhone » | `session.ReadPhoneClipboardSnapshotAsync()` → `Clipboard.SetText` ; « 42 caractère(s) copié(s) depuis l'iPhone ». |
+| **F2** / "To iPhone" button | `session.WritePhoneClipboardAsync(text)` — the text arrives whole and instantly, accents and emoji included. **Fallback** if the service refuses: the old character-by-character typing (`HidKeyboard.Compose`), and the status bar says so, so a slow, lossy paste is not mistaken for the fast one. |
+| **F4** / "From iPhone" button | `session.ReadPhoneClipboardSnapshotAsync()` → `Clipboard.SetText`; "42 character(s) copied from the iPhone." |
 
-- F4 est testé sans Alt : Windows livre Alt+F4 comme `Key.System` avec F4 dessous, et sans ce test le
-  seul raccourci que tout le monde connaît pour fermer une fenêtre irait chercher un presse-papiers.
-- Le presse-papiers du téléphone tient très souvent une photo : `ClipboardContent` porte le genre
-  (`Nothing`, `Text`, `Image`, `Data`), l'UTI et la taille, et la fenêtre annonce « une image
-  (public.png, 1,2 Mo) — non transférée » plutôt que de rendre une chaîne vide qui se lirait « il n'y
-  avait rien ». Le contenu lui-même ne va **jamais** dans le journal, seulement les comptes.
-- **Aucune synchronisation automatique** : rien ne part tout seul, dans aucun sens.
-- Nouveau dans Core : `InputInjector.KeyboardReportAsync(IReadOnlyCollection<int> usagesHeld)` (état complet, sans réponse) ;
-  `TypeAsync` s'appuie dessus. Sonde : commande `keys <texte>` pour prouver la surface 512 (on ouvre Notes et on regarde).
+- F4 is tested without Alt: Windows delivers Alt+F4 as `Key.System` with F4 underneath, and
+  without this check the one shortcut everyone knows for closing a window would go fetch a
+  clipboard instead.
+- The phone's clipboard very often holds a photo: `ClipboardContent` carries the kind
+  (`Nothing`, `Text`, `Image`, `Data`), the UTI and the size, and the window announces "an image
+  (public.png, 1.2 MB) — not transferred" rather than returning an empty string that would read
+  as "there was nothing." The content itself **never** goes into the log, only the counts.
+- **No automatic sync**: nothing leaves on its own, in either direction.
+- New in Core: `InputInjector.KeyboardReportAsync(IReadOnlyCollection<int> usagesHeld)` (full
+  state, no reply expected); `TypeAsync` builds on it. Probe: `keys <text>` command to prove
+  surface 512 (open Notes and look).
 
 ## Session
-- Au lancement et à chaque branchement (`UsbmuxClient` Listen : Attached/Detached) : `DeviceSession.ConnectAsync`.
-- `StateChanged` → barre d'état (« Branché », « Appairé », « Image développeur… », « Tunnel », « Miroir », « Erreur : … »).
-- `UnlockRequired` → bandeau « Déverrouille l'iPhone » sur l'image ; disparaît au changement d'état suivant.
-- `Faulted` → message, nouvelle tentative 5 s plus tard (délai doublé à chaque échec, plafond 30 s),
-  indéfiniment tant que l'appareil est branché. Tant qu'une session existe et n'est pas `Faulted` —
-  y compris pendant un `Resetting` — aucune deuxième session n'est ouverte : un second flux média
-  figerait le service d'affichage.
-- `Resetting` → « Relance du miroir… » ; l'injecteur est relu à chaque `MediaUp`, car un reset doux
-  remonte l'escalier tout seul et en fabrique un nouveau.
-- `RestartRequired` → bandeau « Redémarre l'iPhone » (persistant, l'état est `Faulted`).
-- Première exécution (pas de `DdiFolder`) : boîte de dialogue « Image développeur » : choisir un `.xip` Xcode,
-  un `.dmg` Device Support ou un `.pkg` → `DdiExtractor` vers `%APPDATA%\LuminaMonitor\ddi\<ProductBuildVersion>`
-  (progression ligne à ligne dans la barre d'état, ~1 min pour un xip). Le dossier d'étape est vidé avant
-  chaque tentative : la moitié d'une image plus ancienne ressemblerait trop à une image entière. En cas
-  d'échec, le message dit lequel — fichier inattendu, archive incomplète, paquet absent.
-- Multiplexeur Apple absent ou figé : bandeau (le même que « Déverrouille l'iPhone ») avec le texte du refus
-  **et** un bouton « Ouvrir Appareils Apple », qui lance `explorer.exe shell:AppsFolder\AppleInc.AppleDevices_nzyj5cx40ttqa!App`.
-  Ce bouton n'apparaît que pour cette panne-là (`LuminaException.AppleMultiplexer`), parce que c'est la seule
-  qui se répare d'un clic. L'app n'arrête jamais le processus Apple.
+- On launch and on every plug-in (`UsbmuxClient` Listen: Attached/Detached):
+  `DeviceSession.ConnectAsync`.
+- `StateChanged` → status bar ("Connected", "Paired", "Developer image…", "Tunnel", "Mirror",
+  "Error: …").
+- `UnlockRequired` → "Unlock the iPhone" banner over the picture; disappears on the next state
+  change.
+- `Faulted` → message, retried 5 s later (delay doubled on each failure, capped at 30 s),
+  indefinitely as long as the device is plugged in. As long as a session exists and is not
+  `Faulted` — including during a `Resetting` — no second session is opened: a second media stream
+  would freeze the display service.
+- `Resetting` → "Restarting the mirror…"; the injector is re-read on every `MediaUp`, since a soft
+  reset climbs the whole staircase on its own and builds a new one.
+- `RestartRequired` → "Restart the iPhone" banner (persistent, the state is `Faulted`).
+- First run (no `DdiFolder`): "Developer image" dialog: pick a Xcode `.xip`, a Device Support
+  `.dmg` or a `.pkg` → `DdiExtractor` into
+  `%APPDATA%\LuminaMonitor\ddi\<ProductBuildVersion>` (line-by-line progress in the status bar,
+  ~1 min for a xip). The staging folder is emptied before each attempt: half of an older image
+  would look too much like a complete one. On failure, the message says which — unexpected file,
+  incomplete archive, missing package.
+- Apple's multiplexer missing or stuck: banner (the same as "Unlock the iPhone") with the refusal
+  text **and** an "Open Apple Devices" button, which launches
+  `explorer.exe shell:AppsFolder\AppleInc.AppleDevices_nzyj5cx40ttqa!App`. This button only
+  appears for that one failure (`LuminaException.AppleMultiplexer`), because it is the only one
+  that is fixed with a single click. The app never stops the Apple process.
 
-## Journal
-`%APPDATA%\LuminaMonitor\lumina.log`, **toujours**, pas seulement en diagnostic : écriture asynchrone
-(file bornée + fil dédié, une ligne perdue plutôt qu'une fenêtre figée), horodatage à la milliseconde,
-rotation à 5 Mo vers `lumina.1.log`. On y trouve toutes les transitions d'état, les lignes de Core, les
-décisions de reconnexion, les compteurs média toutes les 10 s quand `MediaUp`, et **toute exception non
-gérée** avec sa pile — les trois portes sont surveillées dans `App.xaml.cs` (`AppDomain.UnhandledException`,
-`DispatcherUnhandledException`, `TaskScheduler.UnobservedTaskException`), chacune vidant le journal sur
-le disque avant de laisser partir le processus. C'est la réponse au symptôme « l'image disparaît sans
-trace » et « le processus s'est terminé sans rien dans l'Observateur d'événements ».
+## Log
+`%APPDATA%\LuminaMonitor\lumina.log`, **always**, not only in diagnostic mode: asynchronous
+writing (bounded queue + dedicated thread, a lost line rather than a frozen window), millisecond
+timestamps, rotated at 5 MB into `lumina.1.log`. It holds every state transition, Core's log
+lines, reconnection decisions, media counters every 10 s while `MediaUp`, and **every unhandled
+exception** with its stack — the three doors are watched in `App.xaml.cs`
+(`AppDomain.UnhandledException`, `DispatcherUnhandledException`, `TaskScheduler.UnobservedTaskException`),
+each one flushing the log to disk before letting the process go. This is the answer to the "the
+picture disappears without a trace" and "the process ended with nothing in Event Viewer"
+symptoms.
 
-## Mode diagnostic
-`LuminaMonitor.App.exe --diagnostic <secondes>` : fenêtre normale, même journal mais verbeux (une ligne
-par seconde : états, images/s reçues et présentées, latence de présentation, erreurs), fermeture
-automatique à l'échéance. Sert aux tests sans personne devant l'écran.
+## Diagnostic mode
+`LuminaMonitor.App.exe --diagnostic <seconds>`: normal window, same log but verbose (one line
+per second: states, frames/s received and presented, presentation latency, errors), closes
+itself automatically at the deadline. Used for testing with nobody in front of the screen.
 
-## Critères d'acceptation
-- Build 0 avertissement ; `--diagnostic 20` : atteint `MediaUp`, ≥ 30 images/s présentées, aucune exception dans le journal.
-- Sonde `keys bonjour` : le texte apparaît dans Notes (constat de visu).
-- Manuel (à l’œil) : tap, appui long, glisser, molette, boutons, frappe ; latence perçue ; orientation paysage.
-- Sonde `chassis-test` : une image décodée par bouton, luminance moyenne à côté — un écran éteint et un
-  flux arrêté se ressemblent dans un journal et jamais dans une image. Puis deux verrouillages, un court
-  et un long, avec les débits seconde par seconde.
-- Sonde `clipboard` puis `clipboard <texte>` : lecture, écriture, relecture (l'écriture sans relecture
-  ne prouve rien).
+## Acceptance criteria
+- Build 0 warnings; `--diagnostic 20`: reaches `MediaUp`, ≥ 30 frames/s presented, no exception in
+  the log.
+- Probe `keys hello`: the text appears in Notes (visual check).
+- Manual (by eye): tap, long press, drag, wheel, buttons, typing; perceived latency; landscape
+  orientation.
+- Probe `chassis-test`: one decoded frame per button, average luminance next to it — a screen that
+  is off and a stream that has stopped look the same in a log and never in a frame. Then two
+  locks, one short and one long, with the packet rates second by second.
+- Probe `clipboard` then `clipboard <text>`: read, write, read back (a write with no read-back
+  proves nothing).

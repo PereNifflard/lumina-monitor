@@ -6,6 +6,8 @@
         FontFamily="{StaticResource BodyFont}" UseLayoutRounding="True"
         WindowStartupLocation="CenterScreen">
 
+    <!-- Aucun texte d'interface ici : libelles, infobulles et bandeaux sont
+         poses par ApplyTexts, depuis Texts (anglais ou francais). -->
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="44" />
@@ -59,7 +61,7 @@
                             </EventTrigger>
                         </Ellipse.Triggers>
                     </Ellipse>
-                    <TextBlock x:Name="StateText" Text="hors ligne" Margin="8,0,0,0"
+                    <TextBlock x:Name="StateText" Margin="8,0,0,0"
                                FontSize="12" FontWeight="Medium"
                                Foreground="#CCE5E2E1" VerticalAlignment="Center" />
                 </StackPanel>
@@ -67,7 +69,6 @@
 
             <Button Grid.Column="3" x:Name="MetricsButton" Style="{StaticResource IconButton}"
                     Click="OnMetricsClicked" Margin="6,0,0,0"
-                    ToolTip="Compteurs (F3)"
                     Content="&#xE9D9;"
                     FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
         </Grid>
@@ -113,30 +114,25 @@
 
                 <!-- 3 bis. Les cibles du clic. La lamelle visible d'un bouton
                      fait une fraction de millimetre de large : cliquable en
-                     theorie, introuvable a la souris. Ces jumelles
-                     transparentes portent le clic, larges comme toute la
-                     tranche de metal, posees par ShapeButtons en meme temps
-                     que les lamelles. -->
-                <Rectangle x:Name="HitAction" Fill="Transparent" Cursor="Hand"
-                           HorizontalAlignment="Left" VerticalAlignment="Top"
-                           MouseLeftButtonDown="OnChassisButtonDown">
-                    <Rectangle.ToolTip>
-                        <ToolTip Content="Muet : coupe et rétablit le son du téléphone. Mesuré le 9 septembre : ce qui part est la touche Muet du clavier média, pas le bouton Action — celui-ci n'est pas atteignable par ce protocole." />
-                    </Rectangle.ToolTip>
-                </Rectangle>
-                <Rectangle x:Name="HitVolUp"  Fill="Transparent" Cursor="Hand"
-                           HorizontalAlignment="Left" VerticalAlignment="Top"
-                           ToolTip="Volume +" MouseLeftButtonDown="OnChassisButtonDown" />
-                <Rectangle x:Name="HitVolDn"  Fill="Transparent" Cursor="Hand"
-                           HorizontalAlignment="Left" VerticalAlignment="Top"
-                           ToolTip="Volume −" MouseLeftButtonDown="OnChassisButtonDown" />
-                <Rectangle x:Name="HitSide"   Fill="Transparent" Cursor="Hand"
-                           HorizontalAlignment="Right" VerticalAlignment="Top"
-                           MouseLeftButtonDown="OnChassisButtonDown">
-                    <Rectangle.ToolTip>
-                        <ToolTip Content="Bouton latéral : éteint l'écran, et le rallume quand il est éteint. Le déverrouillage lui-même reste Face ID ou le code — l'app ne peut taper le code que si tu l'as écrit dans unlockCode." />
-                    </Rectangle.ToolTip>
-                </Rectangle>
+                     theorie, introuvable a la souris. Ces jumelles portent le
+                     clic, larges comme la lamelle et la tranche de metal qui
+                     la porte, posees par ShapeButtons en meme temps que les
+                     lamelles. Des Button et non des rectangles : le focus au
+                     clavier, Espace et Entree, et un nom pour les lecteurs
+                     d'ecran viennent avec. Le style ChassisButton (App.xaml)
+                     dit au repos qu'on peut les toucher. -->
+                <Button x:Name="HitAction" Style="{StaticResource ChassisButton}"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Click="OnChassisButtonClick" />
+                <Button x:Name="HitVolUp"  Style="{StaticResource ChassisButton}"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Click="OnChassisButtonClick" />
+                <Button x:Name="HitVolDn"  Style="{StaticResource ChassisButton}"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Click="OnChassisButtonClick" />
+                <Button x:Name="HitSide"   Style="{StaticResource ChassisButton}"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Click="OnChassisButtonClick" />
 
                 <!-- 4. La bordure de verre noire. Vue de face, les 2,54 mm entre
                         le bord du boitier et le premier pixel ne sont pas tous du
@@ -178,7 +174,7 @@
                                        Source="/assets/lumina-monitor-256.png"
                                        HorizontalAlignment="Center" Margin="0,0,0,16"
                                        RenderOptions.BitmapScalingMode="HighQuality" />
-                                <TextBlock Text="En attente de l'iPhone"
+                                <TextBlock x:Name="HintTitle"
                                            FontFamily="{StaticResource DisplayFont}"
                                            FontSize="18" FontWeight="SemiBold"
                                            HorizontalAlignment="Center"
@@ -197,24 +193,24 @@
                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="1"
                                                Foreground="{StaticResource Primary}"
                                                FontSize="11" FontWeight="Medium" />
-                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="Branche le câble USB"
+                                    <TextBlock x:Name="HintStep1" Grid.Row="0" Grid.Column="1"
                                                Margin="12,0,0,6" FontSize="13"
                                                Foreground="{StaticResource OnSurfaceVariant}" />
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="2"
                                                Foreground="{StaticResource Primary}"
                                                FontSize="11" FontWeight="Medium" />
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="Déverrouille l'écran"
+                                    <TextBlock x:Name="HintStep2" Grid.Row="1" Grid.Column="1"
                                                Margin="12,0,0,6" FontSize="13"
                                                Foreground="{StaticResource OnSurfaceVariant}" />
                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="3"
                                                Foreground="{StaticResource Primary}"
                                                FontSize="11" FontWeight="Medium" />
-                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="Laisse le mode développeur actif"
+                                    <TextBlock x:Name="HintStep3" Grid.Row="2" Grid.Column="1"
                                                Margin="12,0,0,0" FontSize="13"
                                                Foreground="{StaticResource OnSurfaceVariant}" />
                                 </Grid>
 
-                                <TextBlock Text="Rien à installer sur le téléphone : l'image développeur est montée par le câble."
+                                <TextBlock x:Name="HintNote"
                                            TextWrapping="Wrap" FontSize="11.5" LineHeight="18"
                                            Margin="0,16,0,0" Foreground="{StaticResource OutlineVariant}" />
                             </StackPanel>
@@ -233,11 +229,10 @@
                             <StackPanel>
                                 <TextBlock x:Name="UnlockBannerText" TextWrapping="Wrap"
                                            FontSize="13" LineHeight="19"
-                                           Foreground="{StaticResource OnSurface}"
-                                           Text="Déverrouille l'iPhone." />
+                                           Foreground="{StaticResource OnSurface}" />
                                 <!-- Le seul defaut qui se repare d'un clic : le
                                      multiplexeur Apple. Replie le reste du temps. -->
-                                <Button x:Name="AppleDevicesButton" Content="Ouvrir Appareils Apple"
+                                <Button x:Name="AppleDevicesButton"
                                         Margin="0,10,0,0" HorizontalAlignment="Left"
                                         Style="{StaticResource BarButton}"
                                         Click="OnAppleDevicesClicked"
@@ -257,16 +252,15 @@
                                 Visibility="Collapsed"
                                 MouseLeftButtonDown="OnBannerDown">
                             <StackPanel>
-                                <TextBlock Text="iPhone verrouillé"
+                                <TextBlock x:Name="LockBannerTitle"
                                            FontFamily="{StaticResource DisplayFont}"
                                            FontSize="17" FontWeight="SemiBold"
                                            HorizontalAlignment="Center"
                                            Foreground="{StaticResource OnSurface}" />
                                 <TextBlock x:Name="LockBannerText" TextWrapping="Wrap"
                                            FontSize="12.5" LineHeight="19" Margin="0,10,0,0"
-                                           Foreground="{StaticResource OnSurfaceVariant}"
-                                           Text="L'écran est éteint : le flux vidéo est en pause, rien n'est cassé." />
-                                <Button x:Name="WakeButton" Content="Réveiller l'écran"
+                                           Foreground="{StaticResource OnSurfaceVariant}" />
+                                <Button x:Name="WakeButton"
                                         Margin="0,14,0,0" HorizontalAlignment="Center"
                                         Style="{StaticResource BarButton}"
                                         Click="OnWakeClicked" />
@@ -290,7 +284,45 @@
                         </Ellipse.Fill>
                     </Ellipse>
                 </Border>
+
+                <!-- 7. La bulle de decouverte : premier lancement, ou menu
+                        systeme. Posee sur l'ecran, pointe vers les boutons de
+                        gauche ; ShapeButtons la place et oriente sa fleche.
+                        Transparente au clic : le premier clic la chasse et
+                        fait quand meme ce qu'il faisait. -->
+                <DockPanel x:Name="SideHint" HorizontalAlignment="Left" VerticalAlignment="Top"
+                           IsHitTestVisible="False" Visibility="Collapsed" LastChildFill="True">
+                    <Path x:Name="SideHintArrow" DockPanel.Dock="Left"
+                          Data="M 0,7 L 9,0 L 9,14 Z" Stretch="None"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Border x:Name="SideHintCard" Background="#F2201F1F" CornerRadius="12"
+                            Padding="14,9,14,10" BorderThickness="1" MaxWidth="230">
+                        <TextBlock x:Name="SideHintText" TextWrapping="Wrap"
+                                   FontSize="13" FontWeight="Medium" LineHeight="18"
+                                   Foreground="{StaticResource OnSurface}" />
+                    </Border>
+                </DockPanel>
             </Grid>
+
+            <!-- L'etiquette d'un bouton de la tranche, a l'exterieur du
+                 chassis. Un Popup parce que la fenetre n'a que 8 px de marge
+                 autour du telephone : dedans, l'etiquette n'aurait tenu que
+                 sur l'image. Ouvert au survol ou au focus clavier seulement ;
+                 ferme, il n'existe pas. -->
+            <Popup x:Name="ButtonLabel" AllowsTransparency="True" Placement="Custom"
+                   StaysOpen="True" PopupAnimation="Fade" Focusable="False"
+                   IsHitTestVisible="False">
+                <Border x:Name="ButtonLabelCard" Background="#F2201F1F" CornerRadius="10"
+                        Padding="11,6,12,7" BorderThickness="1" Margin="0"
+                        TextElement.FontFamily="{StaticResource BodyFont}">
+                    <StackPanel>
+                        <TextBlock x:Name="ButtonLabelTitle" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource OnSurface}" />
+                        <TextBlock x:Name="ButtonLabelDetail" FontSize="11" Margin="0,1,0,0"
+                                   Foreground="{StaticResource Outline}" />
+                    </StackPanel>
+                </Border>
+            </Popup>
 
             <!-- Le panneau de diagnostic, replie par defaut. -->
             <Border x:Name="MetricsPanel" VerticalAlignment="Top" HorizontalAlignment="Center"
@@ -318,12 +350,11 @@
                 BorderBrush="{StaticResource GlassBorder}" BorderThickness="1">
             <StackPanel Orientation="Horizontal">
                 <Button x:Name="HomeButton" Style="{StaticResource BarButton}"
-                        Click="OnHomeClicked"
-                        ToolTip="Bouton principal (clic droit dans l'image).">
+                        Click="OnHomeClicked">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE80F;" FontSize="14" VerticalAlignment="Center"
                                    FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
-                        <TextBlock Text="Accueil" Margin="9,0,0,0"
+                        <TextBlock x:Name="HomeLabel" Margin="9,0,0,0"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
@@ -334,23 +365,21 @@
                      qu'un menu : le sens est ce qu'on choisit, et un menu le
                      cacherait derrière un clic de plus. -->
                 <Button x:Name="PasteButton" Style="{StaticResource BarButton}"
-                        Click="OnPasteClicked"
-                        ToolTip="Presse-papiers Windows → iPhone (F2). Écrit le presse-papiers du téléphone ; si le service refuse, le texte est tapé au clavier virtuel.">
+                        Click="OnPasteClicked">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE77F;" FontSize="14" VerticalAlignment="Center"
                                    FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
-                        <TextBlock x:Name="PasteLabel" Text="Vers l'iPhone" Margin="9,0,0,0"
+                        <TextBlock x:Name="PasteLabel" Margin="9,0,0,0"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
 
                 <Button x:Name="FetchButton" Style="{StaticResource BarButton}"
-                        Click="OnFetchClicked"
-                        ToolTip="Presse-papiers iPhone → Windows (F4). Le texte est repris ; une image ou des données sont annoncées, pas transférées.">
+                        Click="OnFetchClicked">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE8C8;" FontSize="14" VerticalAlignment="Center"
                                    FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
-                        <TextBlock Text="Depuis l'iPhone" Margin="9,0,0,0"
+                        <TextBlock x:Name="FetchLabel" Margin="9,0,0,0"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>

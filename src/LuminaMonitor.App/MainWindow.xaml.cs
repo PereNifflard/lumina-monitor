@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -172,6 +174,13 @@ public partial class MainWindow : Window
     private double _border;
     private Color _buttonJoint, _buttonChamfer, _buttonFace;
 
+    /// <summary>The colour that says "this can be clicked" on the chassis; one per body colour.</summary>
+    private Color _buttonAccent = Color.FromRgb(0xFF, 0xC8, 0x96);
+    private Brush _haloBrush = Brushes.Transparent;
+
+    /// <summary>The four drawn buttons that do something, with what they need to be animated.</summary>
+    private readonly ChassisControl[] _chassis;
+
     /// <summary>Runs the housekeeping that must not stop when the rendering does.</summary>
     private readonly System.Windows.Threading.DispatcherTimer _upkeep = new()
     {
@@ -254,9 +263,25 @@ public partial class MainWindow : Window
         public uint Flags;
     }
 
+    /// <summary>The sentences of the language chosen right now; see <see cref="Texts"/>.</summary>
+    private static Texts T => Texts.Current;
+
     public MainWindow()
     {
+        // Before the first word is composed, by the window or by Core.
+        InterfaceLanguage.Current = InterfaceLanguage.Resolve(_settings.Language);
+
         InitializeComponent();
+
+        _chassis =
+        [
+            new(HitAction, BtnAction, ChassisKey.Mute),
+            new(HitVolUp, BtnVolUp, ChassisKey.VolumeUp),
+            new(HitVolDn, BtnVolDn, ChassisKey.VolumeDown),
+            new(HitSide, BtnSide, ChassisKey.Side),
+        ];
+        WireChassisButtons();
+        ApplyTexts();
 
         _diagnosticSeconds = DiagnosticSecondsFromCommandLine();
         _replayPath = ReplayPathFromCommandLine();
@@ -264,7 +289,13 @@ public partial class MainWindow : Window
 
         Loaded += OnLoaded;
         Closed += OnClosed;
-        Deactivated += (_, _) => Disengage("Fenêtre quittée.");
+        Deactivated += (_, _) =>
+        {
+            HideButtonLabel();
+            Disengage(t => t.WindowLeft);
+        };
+        LocationChanged += (_, _) => HideButtonLabel();
+        StateChanged += (_, _) => HideButtonLabel();
         CompositionTarget.Rendering += OnRendering;
 
         _upkeep.Tick += OnUpkeep;
@@ -314,25 +345,32 @@ public partial class MainWindow : Window
     {
         ApplyChassis();
         DarkenTitleBar();
+        AddSystemMenu();
         PlaceWindow();
 
         Stage.Focus();
         ShowIdleHint();
         UpdateState();
 
+        // Once in the life of a settings file, and never in an unattended
+        // run: nobody is there to see it, and it would be spent for nothing.
+        // Nor behind another application: see TrySideButtonsHint.
+        _hintPending = !_settings.ChassisHintShown && _diagnosticSeconds == 0;
+        TrySideButtonsHint();
+
         _diagnosticStarted = _clock.Elapsed.TotalSeconds;
         _lastStatsSeconds = _clock.Elapsed.TotalSeconds;
         if (_diagnosticSeconds > 0)
         {
             _journal.Write($"--diagnostic {_diagnosticSeconds} s, journal {_journal.Path}");
-            Report($"Diagnostic : {_diagnosticSeconds} s, journal dans {_journal.Path}");
+            Report(t => t.DiagnosticRun(_diagnosticSeconds, _journal.Path ?? ""));
         }
 
         // Said before anything else: a settings file that could not be read has
         // just been moved aside, and it is the only record of where the
         // developer image was unpacked.
         if (Settings.RescuedTo is string rescued)
-            Report($"Réglages illisibles — l'ancien fichier est conservé sous {rescued}.");
+            Report(t => t.SettingsUnreadable(rescued));
 
         // A replay run never touches the cable: no multiplexer, no developer
         // image, no session. Everything above the depacketizer is the same code.
@@ -347,7 +385,7 @@ public partial class MainWindow : Window
         _watcher = new DeviceWatcher();
         _watcher.Attached += _ => Dispatcher.InvokeAsync(() =>
         {
-            Report("iPhone branché.");
+            Report(t => t.IPhonePlugged);
             _failures = 0;
             _requestedDelay = null;
             _lastAttemptSeconds = double.NegativeInfinity;
@@ -355,7 +393,7 @@ public partial class MainWindow : Window
         });
         _watcher.Detached += _ => Dispatcher.InvokeAsync(() => Detached());
         _watcher.Trouble += message => Dispatcher.InvokeAsync(() =>
-            Note($"Multiplexeur : {message}"));
+            Note(t => t.MultiplexerTrouble(message)));
         _watcher.Start();
 
         _ = StartUpAsync();
@@ -376,18 +414,18 @@ public partial class MainWindow : Window
             var replay = new ReplaySource(path) { Log = line => _journal.Write("rejeu : " + line) };
             if (replay.Records == 0)
             {
-                Fault($"Capture vide : {path}");
+                Fault(t => t.ReplayEmpty(path));
                 return;
             }
             replay.FrameDecoded += AcceptFrame;
             _replay = replay;
             replay.Start();
             _journal.Write($"--replay {path} : {replay.Records} datagramme(s), boucle de {replay.SpanSeconds:F1} s");
-            Report($"Rejeu : {IoPath.GetFileName(path)}  ·  {replay.Records} datagrammes, boucle de {replay.SpanSeconds:F1} s");
+            Report(t => t.ReplayRunning(IoPath.GetFileName(path), replay.Records, replay.SpanSeconds));
         }
         catch (Exception exception)
         {
-            Fault($"Rejeu impossible : {exception.Message}");
+            Fault(t => t.ReplayFailed(exception.Message));
         }
     }
 
@@ -446,11 +484,11 @@ public partial class MainWindow : Window
             _ddiFolder = nearby;
             _settings.DdiFolder = nearby;
             _settings.Save();
-            Note($"Image développeur trouvée dans le dépôt : {nearby}");
+            Note(t => t.DdiFoundInRepository(nearby));
         }
         else if (_diagnosticSeconds > 0)
         {
-            Fault("Aucune image développeur et personne pour en choisir une : diagnostic sans session.");
+            Fault(t => t.DiagnosticWithoutDdi);
             return;
         }
         else
@@ -512,18 +550,18 @@ public partial class MainWindow : Window
 
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "Image développeur : archive Xcode (.xip), Device Support (.dmg) ou paquet (.pkg)",
-            Filter = "Archives Apple (*.xip;*.dmg;*.pkg)|*.xip;*.dmg;*.pkg|Tous les fichiers (*.*)|*.*",
+            Title = T.DdiDialogTitle,
+            Filter = T.DdiDialogFilter,
             CheckFileExists = true,
         };
         if (_settings.LastArchive.Length > 0 &&
             IoPath.GetDirectoryName(_settings.LastArchive) is string last && Directory.Exists(last))
             dialog.InitialDirectory = last;
 
-        Report("Aucune image développeur : choisis une archive Xcode ou un Device Support.");
+        Report(t => t.ChooseDdiArchive);
         if (dialog.ShowDialog(this) != true)
         {
-            Report("Sans image développeur, le téléphone ne peut pas être piloté. Relance pour en choisir une.");
+            Report(t => t.NoDdiChosen);
             return;
         }
 
@@ -538,14 +576,17 @@ public partial class MainWindow : Window
             if (Directory.Exists(staging))
                 Directory.Delete(staging, recursive: true);
 
-            Report($"Extraction de {IoPath.GetFileName(source)} — quelques minutes…");
-            var progress = new Progress<string>(line => Note(line));
-            var result = await Task.Run(() => DdiExtractor.Extract(source, staging, progress));
+            Report(t => t.Extracting(IoPath.GetFileName(source)));
+            // Two channels: the extractor's own lines are the journal's, in
+            // French; the gigabytes are the one progress a person waits on, and
+            // are worded here in the interface's language.
+            var progress = new Progress<string>(NoteCore);
+            var scanned = new Progress<long>(gigabytes => ShowProgress(t => t.ArchiveScanned(gigabytes)));
+            var result = await Task.Run(() => DdiExtractor.Extract(source, staging, progress, scanned));
 
             if (result.Source is null || !result.ManifestPresent)
             {
-                Fault($"{IoPath.GetFileName(source)} ne contient pas d'image développeur"
-                    + " — attendu une archive Xcode 27, un composant Device Support ou XcodeSystemResources.pkg.");
+                Fault(t => t.NoDdiInArchive(IoPath.GetFileName(source)));
                 return;
             }
 
@@ -563,11 +604,11 @@ public partial class MainWindow : Window
             _settings.DdiFolder = folder;
             _settings.LastArchive = source;
             _settings.Save();
-            Report($"Image développeur prête ({result.ProductBuildVersion ?? "build inconnue"}).");
+            Report(t => t.DdiReady(result.ProductBuildVersion));
         }
         catch (Exception exception)
         {
-            Fault($"Extraction impossible : {exception.Message}");
+            Fault(t => t.ExtractionFailed(exception.Message));
         }
         finally
         {
@@ -641,7 +682,7 @@ public partial class MainWindow : Window
 
         _lastAttemptSeconds = _clock.Elapsed.TotalSeconds;
         _connecting = true;
-        Report("Connexion à l'iPhone…");
+        Report(t => t.Connecting);
         _ = Task.Run(ClimbAsync);
     }
 
@@ -660,7 +701,7 @@ public partial class MainWindow : Window
         session.RestartRequired += message => Dispatcher.InvokeAsync(() =>
         {
             ShowUnlockBanner(message);
-            Fault(message);
+            Fault(_ => message);
         });
         session.FrameDecoded += AcceptFrame;
         _session = session;
@@ -678,9 +719,7 @@ public partial class MainWindow : Window
                 _failures = 0;
                 _requestedDelay = null;
                 HideUnlockBanner();
-                Report(_diagnosticSeconds > 0
-                    ? "Miroir ouvert."
-                    : "Miroir ouvert · clic dans l'image pour piloter · Ctrl+Alt pour rendre la souris");
+                Report(t => _diagnosticSeconds > 0 ? t.MirrorOpen : t.MirrorOpenHowTo);
                 _ = DimAsync();
             });
         }
@@ -705,7 +744,7 @@ public partial class MainWindow : Window
                 // one failure the person can act on without touching the phone.
                 if (exception is LuminaException { AppleMultiplexer: true })
                     ShowMultiplexerBanner(exception.Message);
-                Fault($"{exception.Message} — nouvelle tentative dans {RetryDelay:0} s.");
+                Fault(t => t.RetryIn(exception.Message, RetryDelay));
             });
         }
         finally
@@ -730,7 +769,7 @@ public partial class MainWindow : Window
 
     private void Detached()
     {
-        Report("iPhone débranché.");
+        Report(t => t.IPhoneUnplugged);
         _touching = false;
         _pressPending = false;
         _heldKeys.Clear();
@@ -778,17 +817,7 @@ public partial class MainWindow : Window
             LockBanner.Visibility = Visibility.Collapsed;
         }
 
-        Report(state switch
-        {
-            SessionState.Detached => "Débranché.",
-            SessionState.Attached => "Branché.",
-            SessionState.Paired => "Appairé.",
-            SessionState.DdiMounted => "Image développeur montée.",
-            SessionState.TunnelUp => "Tunnel ouvert.",
-            SessionState.MediaUp => "Miroir en cours.",
-            SessionState.Resetting => "Relance du miroir…",
-            _ => "Erreur.",
-        });
+        Report(t => t.Step(state));
         if (state != SessionState.Faulted)
             HideUnlockBanner();
         _journal.Write($"etat {state}");
@@ -799,7 +828,7 @@ public partial class MainWindow : Window
         UnlockBannerText.Text = message;
         AppleDevicesButton.Visibility = Visibility.Collapsed;
         UnlockBanner.Visibility = Visibility.Visible;
-        Report(message);
+        Report(_ => message);
     }
 
     /// <summary>
@@ -833,11 +862,11 @@ public partial class MainWindow : Window
             // packaged, so there is no path to run — and nothing here goes
             // near the process that may already be wedged.
             Process.Start(new ProcessStartInfo("explorer.exe", AppleDevicesShellPath) { UseShellExecute = true });
-            Report("Appareils Apple demandé — la connexion repart d'elle-même.");
+            Report(t => t.AppleDevicesOpened);
         }
         catch (Exception exception)
         {
-            Fault($"Ouverture d'Appareils Apple impossible : {exception.Message}");
+            Fault(t => t.AppleDevicesFailed(exception.Message));
         }
     }
 
@@ -847,8 +876,9 @@ public partial class MainWindow : Window
     /// <remarks>
     /// Every rung of the climb reports through this, from the thread that
     /// climbed it — which is never the UI thread, hence the hop. The lines are
-    /// worth having even in an ordinary run: the status bar shows the last one,
-    /// and the diagnostic journal keeps them all.
+    /// worth having even in an ordinary run: the diagnostic journal keeps them
+    /// all, and a French interface shows the last one in the status bar (see
+    /// <see cref="NoteCore"/> for why only a French one).
     /// </remarks>
     private sealed class SessionLog : ILog
     {
@@ -856,9 +886,9 @@ public partial class MainWindow : Window
 
         public SessionLog(MainWindow window) => _window = window;
 
-        public void Info(string message) => _window.Dispatcher.InvokeAsync(() => _window.Note(message));
+        public void Info(string message) => _window.Dispatcher.InvokeAsync(() => _window.NoteCore(message));
 
-        public void Warn(string message) => _window.Dispatcher.InvokeAsync(() => _window.Note(message));
+        public void Warn(string message) => _window.Dispatcher.InvokeAsync(() => _window.NoteCore(message));
     }
 
     // --- Input ------------------------------------------------------------------
@@ -875,7 +905,7 @@ public partial class MainWindow : Window
     /// them. The order is now the injector's business, and its pump has one
     /// pending position rather than a queue; this is only the door in.
     /// </remarks>
-    private void Post(string what, Func<InputInjector, Task> work)
+    private void Post(Func<Texts, string> what, Func<InputInjector, Task> work)
     {
         var input = _input;
         if (input is null)
@@ -889,7 +919,7 @@ public partial class MainWindow : Window
             }
             catch (Exception exception)
             {
-                await Dispatcher.InvokeAsync(() => Fault($"{what} : {exception.Message}"));
+                await Dispatcher.InvokeAsync(() => Fault(t => t.ActionFailed(what(t), exception.Message)));
             }
         });
     }
@@ -918,7 +948,7 @@ public partial class MainWindow : Window
     /// </remarks>
     private void NoteInputFault(Exception exception)
     {
-        Fault($"entrée : {exception.Message}");
+        Fault(t => t.InputFault(exception.Message));
 
         double now = _clock.Elapsed.TotalSeconds;
         if (_rebuildingInput || _session is not { } session ||
@@ -934,7 +964,7 @@ public partial class MainWindow : Window
         _touching = false;
         _pressPending = false;
         _heldKeys.Clear();
-        Report("Canal d'entrée bloqué : réouverture…");
+        Report(t => t.InputReopening);
         _ = RebuildInputAsync(session);
     }
 
@@ -945,9 +975,9 @@ public partial class MainWindow : Window
         {
             _rebuildingInput = false;
             if (rebuilt)
-                Report("Canal d'entrée rétabli.");
+                Report(t => t.InputRestored);
             else
-                Fault("Canal d'entrée perdu : la session est reconstruite.");
+                Fault(t => t.InputLost);
         });
     }
 
@@ -1206,6 +1236,7 @@ public partial class MainWindow : Window
         UpdateState();
         WriteStatsLine();
         WatchDiagnostic();
+        TrySideButtonsHint();
 
         // Backstop for the expiry check in OnRendering, which stops with the
         // rendering: a hold begun over a frozen picture would otherwise stay
@@ -1253,9 +1284,11 @@ public partial class MainWindow : Window
             return;
 
         _screenDark = dark;
-        LockBannerText.Text = _settings.UnlockCode.Length > 0
-            ? "L'écran est éteint : le flux vidéo tourne au ralenti, rien n'est cassé. Le réveil balaie et tape ton code."
-            : "L'écran est éteint : le flux vidéo tourne au ralenti, rien n'est cassé. Le réveil rallume l'écran ; le déverrouillage reste Face ID ou ton code, sur le téléphone.";
+        RefreshLockBannerText();
+
+        // The side button's label and accessible name follow the screen:
+        // "Lock" over a lit one, "Wake screen" over a dark one.
+        RefreshChassisTexts();
         LockBanner.Visibility = dark ? Visibility.Visible : Visibility.Collapsed;
 
         if (dark)
@@ -1263,16 +1296,20 @@ public partial class MainWindow : Window
             // The banner sits where the pointer would be aiming, and a finger on
             // a sleeping screen does nothing anyway.
             Disengage();
-            Report("iPhone verrouillé — l'image reprend au réveil.");
+            Report(t => t.IPhoneLocked);
         }
         else if (_input is not null)
         {
             // Only when there is still a session: a banner that goes down
             // because the session died is not a screen coming back on.
-            Report("Écran rallumé.");
+            Report(t => t.ScreenOn);
         }
         UpdateState();
     }
+
+    /// <summary>What the lock banner promises the wake button will do: it depends on the passcode.</summary>
+    private void RefreshLockBannerText() =>
+        LockBannerText.Text = _settings.UnlockCode.Length > 0 ? T.LockedWithCode : T.LockedWithoutCode;
 
     /// <summary>Is a picture actually arriving right now?</summary>
     private bool Mirroring =>
@@ -1364,13 +1401,13 @@ public partial class MainWindow : Window
         _lastMovesDropped = input.MovesDropped;
         _lastSampleSeconds = now;
 
-        string mode = _engaged ? "PILOTAGE" : "libre";
         MetricsText.Text = _surface is not null
-            ? $"{mode}   {_surfaceWidth}x{_surfaceHeight}->{Screen.ActualWidth,4:0}   " +
-              $"{_fps,4:0} i/s reçues   {_presentedFps,4:0} i/s affichées   décodage {_latencyMs,5:0.0} ms   " +
-              $"souris {mouseHz,4:0}/s -> {sendHz,3:0}/s (-{dropHz,4:0}/s, file {input.QueueDepth})   " +
-              $"état {_state}   erreurs {_errors}"
-            : $"{mode}   aucune image   souris {mouseHz,4:0}/s   état {_state}";
+            ? T.Counters(new CounterSample(
+                _engaged, _surfaceWidth, _surfaceHeight, Screen.ActualWidth,
+                _fps, _presentedFps, _latencyMs,
+                mouseHz, sendHz, dropHz, input.QueueDepth,
+                _state, _errors))
+            : T.CountersNoPicture(_engaged, mouseHz, _state);
 
         if (_diagnosticSeconds > 0)
         {
@@ -1520,17 +1557,18 @@ public partial class MainWindow : Window
         bool driving = _input is not null;
         _hadStream |= _surface is not null;
 
+        Texts t = T;
         (string key, string label) = (video, driving) switch
         {
             // First of all: a dark screen still sends a picture a second, so
             // every arm below would call it healthy and show a green "2 i/s"
             // beside a banner saying the phone is locked.
-            _ when _screenDark => ("Warn", "verrouillé"),
-            (true, true) => ("SuccessPulse", _engaged ? $"pilotage · {_presentedFps:0} i/s" : $"{_presentedFps:0} i/s"),
-            (true, false) => ("Warn", "sans clavier"),
-            (false, true) => ("Warn", _hadStream ? "flux arrêté" : "en attente"),
-            _ when _state == SessionState.Resetting => ("Warn", "relance…"),
-            _ => ("Error", _state == SessionState.Faulted ? "erreur" : "hors ligne"),
+            _ when _screenDark => ("Warn", t.PillLocked),
+            (true, true) => ("SuccessPulse", t.PillFps(_presentedFps, _engaged)),
+            (true, false) => ("Warn", t.PillNoKeyboard),
+            (false, true) => ("Warn", _hadStream ? t.PillStreamStopped : t.PillWaiting),
+            _ when _state == SessionState.Resetting => ("Warn", t.PillRestarting),
+            _ => ("Error", _state == SessionState.Faulted ? t.PillError : t.PillOffline),
         };
 
         StateDot.Fill = (Brush)FindResource(key);
@@ -1558,7 +1596,8 @@ public partial class MainWindow : Window
         if (!mirroring && _screenDark)
             return;
 
-        Report(mirroring ? "Flux repris." : $"Flux arrêté à {DateTime.Now:HH:mm:ss}. F3 pour les compteurs.");
+        DateTime now = DateTime.Now;
+        Report(t => mirroring ? t.StreamResumed : t.StreamStopped(now));
     }
 
     /// <summary>Ends a timed diagnostic run and writes what it saw.</summary>
@@ -1595,35 +1634,235 @@ public partial class MainWindow : Window
 
     // --- Status -----------------------------------------------------------------
 
+    // The three below take the sentence as a function of the table rather than
+    // as a string, and call it twice: once in the interface's language for the
+    // screen, once in French for the journal. The journal is the maintainer's
+    // instrument and reads the same whichever language the person chose; a
+    // message that came up from Core arrives already composed, as `_ => text`.
+
     /// <summary>Shows a line of status, and refreshes the state dot with it.</summary>
-    private void Report(string message)
+    private void Report(Func<Texts, string> say)
     {
-        StatusText.Text = message;
-        _journal.Write(message);
+        StatusText.Text = say(T);
+        _journal.Write(say(Texts.French));
         UpdateState();
     }
 
     /// <summary>A line worth keeping but not worth interrupting the status bar for.</summary>
-    private void Note(string message)
+    private void Note(Func<Texts, string> say)
     {
-        _journal.Write(message);
+        _journal.Write(say(Texts.French));
         if (_state != SessionState.MediaUp)
-            StatusText.Text = message;
+            StatusText.Text = say(T);
     }
 
     /// <summary>Something went wrong, said once and counted.</summary>
-    private void Fault(string message)
+    private void Fault(Func<Texts, string> say)
     {
         _errors++;
-        _journal.Write("ERREUR " + message);
-        StatusText.Text = message;
+        _journal.Write("ERREUR " + say(Texts.French));
+        StatusText.Text = say(T);
         UpdateState();
     }
 
+    /// <summary>
+    /// One of Core's own log lines: always to the journal, to the status bar
+    /// only when the interface is French.
+    /// </summary>
+    /// <remarks>
+    /// Those lines are the journal — protocol detail, in French, and staying
+    /// so. A French interface has always shown the latest in the status bar
+    /// while the climb runs, and still does; an English one keeps the rung it
+    /// last reported in its own words instead of a French line it cannot read.
+    /// </remarks>
+    private void NoteCore(string line)
+    {
+        _journal.Write(line);
+        if (_state != SessionState.MediaUp && InterfaceLanguage.Current == DisplayLanguage.French)
+            StatusText.Text = line;
+    }
+
+    /// <summary>A progress line for the status bar alone: the journal already has Core's own.</summary>
+    private void ShowProgress(Func<Texts, string> say) => StatusText.Text = say(T);
+
     private void ShowIdleHint() =>
-        Report(_input is not null
-            ? "Clic dans l'image pour piloter  ·  Ctrl+Alt pour récupérer la souris"
-            : "En attente de l'iPhone.");
+        Report(t => _input is not null ? t.IdleDrivable : t.WaitingForIPhone);
+
+    // --- Language ---------------------------------------------------------------
+
+    /// <summary>
+    /// Puts the words on everything the XAML declares, in the current language.
+    /// </summary>
+    /// <remarks>
+    /// The XAML carries no text of its own, so this is the only place a label
+    /// gets one — once after <c>InitializeComponent</c>, and again whenever the
+    /// language changes. The unlock banner is left as it is when it is up: it
+    /// shows a sentence that came up from Core, which was composed in the
+    /// language of its moment and is replaced by the next one.
+    /// </remarks>
+    private void ApplyTexts()
+    {
+        Texts t = T;
+
+        MetricsButton.ToolTip = t.CountersTooltip;
+
+        // The chassis buttons have no tooltip any more: their floating label
+        // says the same thing, at once and outside the chassis, and two
+        // floating things over one button is one too many. The long sentences
+        // the tooltips carried become the buttons' help text.
+        RefreshChassisTexts();
+
+        HintTitle.Text = t.WaitingTitle;
+        HintStep1.Text = t.StepPlugCable;
+        HintStep2.Text = t.StepUnlock;
+        HintStep3.Text = t.StepDeveloperMode;
+        HintNote.Text = t.NothingToInstall;
+
+        AppleDevicesButton.Content = t.OpenAppleDevices;
+        LockBannerTitle.Text = t.LockedTitle;
+        RefreshLockBannerText();
+        WakeButton.Content = t.WakeScreen;
+
+        HomeButton.ToolTip = t.HomeTooltip;
+        HomeLabel.Text = t.Home;
+        PasteButton.ToolTip = t.ToIPhoneTooltip;
+        PasteLabel.Text = _pasting ? t.StopPasting : t.ToIPhone;
+        FetchButton.ToolTip = t.FromIPhoneTooltip;
+        FetchLabel.Text = t.FromIPhone;
+
+        UpdateState();
+    }
+
+    // The window's system menu — right-click on the title bar, or Alt+Space —
+    // is the one menu this window already has, and the language is a choice
+    // made once: three entries at the bottom of it rather than a control in a
+    // bar where every pixel is a pixel of phone. The identifiers keep their low
+    // four bits clear, which WM_SYSCOMMAND reserves for the system.
+    private const int MenuLanguageAuto = 0x1000;
+    private const int MenuLanguageEnglish = 0x1010;
+    private const int MenuLanguageFrench = 0x1020;
+    private const int MenuShowSideButtons = 0x1030;
+    private const int WmSysCommand = 0x0112;
+    private const uint MfString = 0x0000, MfSeparator = 0x0800, MfByCommand = 0x0000;
+    private const uint MfUnchecked = 0x0000, MfChecked = 0x0008;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetSystemMenu(IntPtr window, bool revert);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool AppendMenuW(IntPtr menu, uint flags, UIntPtr id, string? text);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool ModifyMenuW(IntPtr menu, uint position, uint flags, UIntPtr id, string text);
+
+    [DllImport("user32.dll")]
+    private static extern uint CheckMenuItem(IntPtr menu, uint id, uint check);
+
+    private IntPtr _systemMenu;
+
+    /// <summary>
+    /// Adds the side-buttons entry and the three language entries to the
+    /// system menu, and listens for them.
+    /// </summary>
+    /// <remarks>
+    /// The two languages are named in their own words, as language pickers do
+    /// everywhere: whoever cannot read the current one can still find theirs.
+    /// The side-buttons entry replays the first-run discovery, for whoever
+    /// dismissed it too fast or forgot it.
+    /// </remarks>
+    private void AddSystemMenu()
+    {
+        IntPtr handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || HwndSource.FromHwnd(handle) is not { } source)
+            return;
+
+        _systemMenu = GetSystemMenu(handle, false);
+        if (_systemMenu == IntPtr.Zero)
+            return;
+
+        AppendMenuW(_systemMenu, MfSeparator, UIntPtr.Zero, null);
+        AppendMenuW(_systemMenu, MfString, (UIntPtr)MenuShowSideButtons, T.MenuShowSideButtons);
+        AppendMenuW(_systemMenu, MfSeparator, UIntPtr.Zero, null);
+        AppendMenuW(_systemMenu, MfString, (UIntPtr)MenuLanguageAuto, T.MenuLanguageAuto);
+        AppendMenuW(_systemMenu, MfString, (UIntPtr)MenuLanguageEnglish, "English");
+        AppendMenuW(_systemMenu, MfString, (UIntPtr)MenuLanguageFrench, "Français");
+        RefreshLanguageMenu();
+        source.AddHook(OnWindowMessage);
+    }
+
+    /// <summary>The check mark on the setting in force, and the automatic entry in the current language.</summary>
+    private void RefreshLanguageMenu()
+    {
+        if (_systemMenu == IntPtr.Zero)
+            return;
+
+        string setting = LanguageSetting(_settings.Language);
+        ModifyMenuW(_systemMenu, MenuShowSideButtons, MfByCommand | MfString,
+            (UIntPtr)MenuShowSideButtons, T.MenuShowSideButtons);
+        ModifyMenuW(_systemMenu, MenuLanguageAuto, MfByCommand | MfString,
+            (UIntPtr)MenuLanguageAuto, T.MenuLanguageAuto);
+        CheckMenuItem(_systemMenu, MenuLanguageAuto, MfByCommand | (setting == "auto" ? MfChecked : MfUnchecked));
+        CheckMenuItem(_systemMenu, MenuLanguageEnglish, MfByCommand | (setting == "en" ? MfChecked : MfUnchecked));
+        CheckMenuItem(_systemMenu, MenuLanguageFrench, MfByCommand | (setting == "fr" ? MfChecked : MfUnchecked));
+    }
+
+    /// <summary>A <c>language</c> setting reduced to the three values the menu knows.</summary>
+    private static string LanguageSetting(string? value)
+    {
+        string wanted = (value ?? "").Trim().ToLowerInvariant();
+        return wanted.StartsWith("en", StringComparison.Ordinal) ? "en"
+             : wanted.StartsWith("fr", StringComparison.Ordinal) ? "fr"
+             : "auto";
+    }
+
+    private IntPtr OnWindowMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message != WmSysCommand)
+            return IntPtr.Zero;
+
+        if ((int)(wParam.ToInt64() & 0xFFF0) == MenuShowSideButtons)
+        {
+            ShowSideButtonsHint();
+            handled = true;
+            return IntPtr.Zero;
+        }
+
+        string? choice = (int)(wParam.ToInt64() & 0xFFF0) switch
+        {
+            MenuLanguageAuto => "auto",
+            MenuLanguageEnglish => "en",
+            MenuLanguageFrench => "fr",
+            _ => null,
+        };
+        if (choice is not null)
+        {
+            ChooseLanguage(choice);
+            handled = true;
+        }
+        return IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// Saves the choice and applies it at once — no restart.
+    /// </summary>
+    /// <remarks>
+    /// Restarting would cost more than it looks: the phone refuses a new video
+    /// stream for a minute or more after the previous one, so a window closed
+    /// and reopened for a language is a minute without a mirror. Everything
+    /// composed from now on — labels, the pill, the status bar, Core's messages
+    /// — is in the new language; a sentence already on screen stays until the
+    /// next one replaces it.
+    /// </remarks>
+    private void ChooseLanguage(string setting)
+    {
+        _settings.Language = setting;
+        _settings.Save();
+        InterfaceLanguage.Current = InterfaceLanguage.Resolve(setting);
+
+        ApplyTexts();
+        RefreshLanguageMenu();
+        Report(t => t.LanguageSaved(setting));
+    }
 
     // --- Geometry ---------------------------------------------------------------
 
@@ -1644,14 +1883,12 @@ public partial class MainWindow : Window
         _orientation = seen;
         FitDevice();
 
-        Report(seen switch
+        Report(t => seen switch
         {
-            DeviceGeometry.Orientation.IslandLeft => "Téléphone en paysage, île à gauche.",
-            DeviceGeometry.Orientation.IslandRight => "Téléphone en paysage, île à droite.",
-            DeviceGeometry.Orientation.Unknown =>
-                "Paysage — impossible de dire de quel côté est l'île (écran trop sombre). " +
-                "Île et boutons masqués.",
-            _ => "Téléphone en portrait.",
+            DeviceGeometry.Orientation.IslandLeft => t.LandscapeIslandLeft,
+            DeviceGeometry.Orientation.IslandRight => t.LandscapeIslandRight,
+            DeviceGeometry.Orientation.Unknown => t.LandscapeUnknown,
+            _ => t.Portrait,
         });
     }
 
@@ -1687,6 +1924,13 @@ public partial class MainWindow : Window
         _buttonJoint = (Color)FindResource("BtnJoint" + suffix);
         _buttonChamfer = (Color)FindResource("BtnChamfer" + suffix);
         _buttonFace = (Color)FindResource("BtnFace" + suffix);
+
+        _buttonAccent = (Color)FindResource("BtnAccent" + suffix);
+        _haloBrush = HaloBrush(_buttonAccent);
+        SideHintArrow.Fill = Freeze(new SolidColorBrush(_buttonAccent));
+        SideHintCard.BorderBrush = Freeze(new SolidColorBrush(WithAlpha(_buttonAccent, 0x8C)));
+        _labelBorder = Freeze(new SolidColorBrush(WithAlpha(_buttonAccent, 0x73)));
+        ButtonLabelCard.BorderBrush = _labelBorder;
 
         if (_border > 0)
             ShapeButtons(_border);
@@ -1991,27 +2235,35 @@ public partial class MainWindow : Window
     /// were: buttons drawn down the short edges of a landscape phone are not a
     /// small inaccuracy, they are a different object.</para>
     ///
-    /// <para>Each lamella now carries an invisible twin as wide as the metal
-    /// band, laid out here alongside it. Half a millimetre of drawn button is
-    /// honest and unclickable; the twin is what the hand actually hits.</para>
+    /// <para>Each lamella now carries a twin that takes the click, laid out
+    /// here alongside it: from the lamella's outer edge to where the black
+    /// glass begins. Half a millimetre of drawn button is honest and
+    /// unclickable; the twin is what the hand actually hits — and, since the
+    /// hand has to find it first, what carries the accent that says so.</para>
     /// </remarks>
     private void ShapeButtons(double border)
     {
-        var buttons = new[]
+        var buttons = new (Rectangle Shape, ChassisControl? Control, DeviceGeometry.SideButton Spec, bool Left)[]
         {
-            (Shape: BtnAction, Hit: (Rectangle?)HitAction, Spec: DeviceGeometry.Action, Left: true),
-            (Shape: BtnVolUp, Hit: (Rectangle?)HitVolUp, Spec: DeviceGeometry.VolumeUp, Left: true),
-            (Shape: BtnVolDn, Hit: (Rectangle?)HitVolDn, Spec: DeviceGeometry.VolumeDown, Left: true),
-            (Shape: BtnSide, Hit: (Rectangle?)HitSide, Spec: DeviceGeometry.Side, Left: false),
-            (Shape: BtnCamera, Hit: (Rectangle?)null, Spec: DeviceGeometry.Camera, Left: false),
+            (BtnAction, _chassis[0], DeviceGeometry.Action, true),
+            (BtnVolUp, _chassis[1], DeviceGeometry.VolumeUp, true),
+            (BtnVolDn, _chassis[2], DeviceGeometry.VolumeDown, true),
+            (BtnSide, _chassis[3], DeviceGeometry.Side, false),
+            (BtnCamera, null, DeviceGeometry.Camera, false),
         };
 
         bool show = _orientation != DeviceGeometry.Orientation.Unknown;
         bool portrait = _orientation == DeviceGeometry.Orientation.Portrait;
         double along = portrait ? Device.Height : Device.Width;
 
-        foreach (var (shape, hit, spec, onLeft) in buttons)
+        // Whatever the label was pinned to has just moved.
+        HideButtonLabel();
+        if (!show)
+            HideSideButtonsHint();
+
+        foreach (var (shape, control, spec, onLeft) in buttons)
         {
+            Button? hit = control?.Hit;
             shape.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
             if (hit is not null)
                 hit.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
@@ -2034,10 +2286,13 @@ public partial class MainWindow : Window
 
             shape.RadiusX = shape.RadiusY = (flush ? thickness : proud) * 0.5;
 
-            // The twin is as thick as the metal band and reaches inwards from
-            // the same edge, so the hand has a target it can see the shape of.
-            double hitThickness = metal;
-            double hitProud = proud - hitThickness + thickness;
+            // The twin starts at the lamella's outer edge and runs inwards to
+            // the glass: the whole of the button that shows, and the metal
+            // band behind it, so the hand has a target it can see the shape
+            // of. The glass is drawn over it, so nothing past that point can
+            // take a click that belongs to the picture.
+            double hitThickness = proud + metal;
+            double hitProud = proud;
 
             Outward outward;
             switch (_orientation)
@@ -2092,9 +2347,19 @@ public partial class MainWindow : Window
             }
 
             shape.Fill = flush ? SeamBrush : ButtonBrush(outward);
+
+            if (control is not null)
+            {
+                control.Outward = outward;
+                control.Hit.Background = CueBrush(outward);
+                control.Hit.BorderBrush = _haloBrush;
+            }
         }
 
-        static void Lay(Rectangle shape, double width, double height,
+        if (SideHint.Visibility == Visibility.Visible)
+            PlaceSideHint();
+
+        static void Lay(FrameworkElement shape, double width, double height,
                         HorizontalAlignment horizontal, VerticalAlignment vertical,
                         Thickness margin)
         {
@@ -2138,6 +2403,53 @@ public partial class MainWindow : Window
         return Freeze(brush);
     }
 
+    /// <summary>
+    /// The accent a clickable button wears at rest: a bright edge on the
+    /// lamella, fading across the metal behind it.
+    /// </summary>
+    /// <remarks>
+    /// Runs from the outer edge inwards, so it turns with the phone for the
+    /// same reason <see cref="ButtonBrush"/> does. The lamella is the outer
+    /// quarter or so of the target; the edge line sits on it and the rest is a
+    /// reflection on the rail, strong enough to be seen at a glance and faint
+    /// enough not to read as a second, coloured button.
+    /// </remarks>
+    private Brush CueBrush(Outward outward)
+    {
+        (Point from, Point to) = outward switch
+        {
+            Outward.Left => (new Point(0, 0.5), new Point(1, 0.5)),
+            Outward.Right => (new Point(1, 0.5), new Point(0, 0.5)),
+            Outward.Up => (new Point(0.5, 0), new Point(0.5, 1)),
+            _ => (new Point(0.5, 1), new Point(0.5, 0)),
+        };
+
+        // The lamella is the outer 28 % of the target (0.45 proud of 0.45 +
+        // 1.15 mm): a bright outer half, a lighter tint on its inner half so
+        // its own chamfer still shows, then a reflection dying out on the rail.
+        var brush = new LinearGradientBrush { StartPoint = from, EndPoint = to };
+        brush.GradientStops.Add(new GradientStop(WithAlpha(_buttonAccent, 0xF2), 0.00));
+        brush.GradientStops.Add(new GradientStop(WithAlpha(_buttonAccent, 0xD0), 0.09));
+        brush.GradientStops.Add(new GradientStop(WithAlpha(_buttonAccent, 0x70), 0.16));
+        brush.GradientStops.Add(new GradientStop(WithAlpha(_buttonAccent, 0x52), 0.30));
+        brush.GradientStops.Add(new GradientStop(WithAlpha(_buttonAccent, 0x1C), 0.62));
+        brush.GradientStops.Add(new GradientStop(WithAlpha(_buttonAccent, 0x00), 1.00));
+        return Freeze(brush);
+    }
+
+    /// <summary>The soft light around a button under the pointer: a gradient, not an effect.</summary>
+    private static Brush HaloBrush(Color accent)
+    {
+        var brush = new RadialGradientBrush { Center = new Point(0.5, 0.5), GradientOrigin = new Point(0.5, 0.5) };
+        brush.GradientStops.Add(new GradientStop(WithAlpha(accent, 0xB0), 0.00));
+        brush.GradientStops.Add(new GradientStop(WithAlpha(accent, 0x48), 0.55));
+        brush.GradientStops.Add(new GradientStop(WithAlpha(accent, 0x00), 1.00));
+        return Freeze(brush);
+    }
+
+    private static Color WithAlpha(Color colour, byte alpha) =>
+        Color.FromArgb(alpha, colour.R, colour.G, colour.B);
+
     private static Brush Freeze(Brush brush)
     {
         brush.Freeze();
@@ -2162,16 +2474,139 @@ public partial class MainWindow : Window
 
     // --- Chassis buttons ---------------------------------------------------------
 
-    /// <summary>How long a pressed control stays lit under the pointer.</summary>
-    private static readonly Duration ButtonFlash = new(TimeSpan.FromMilliseconds(280));
+    /// <summary>What a drawn button does, which is not always what it is: see <see cref="OnChassisButtonClick"/>.</summary>
+    private enum ChassisKey { Mute, VolumeUp, VolumeDown, Side }
+
+    /// <summary>One clickable button of the chassis: its target, its lamella, and which way it faces.</summary>
+    /// <remarks>
+    /// The lamella and the target share one <see cref="TranslateTransform"/>,
+    /// which is how a press pushes both into the body together.
+    /// </remarks>
+    private sealed class ChassisControl(Button hit, Rectangle lamella, ChassisKey key)
+    {
+        public Button Hit { get; } = hit;
+        public Rectangle Lamella { get; } = lamella;
+        public ChassisKey Key { get; } = key;
+        public Outward Outward { get; set; } = Outward.Left;
+        public TranslateTransform Push { get; } = new();
+
+        /// <summary>A named part of the button's template, once it has one.</summary>
+        public UIElement? Part(string name)
+        {
+            Hit.ApplyTemplate();
+            return Hit.Template?.FindName(name, Hit) as UIElement;
+        }
+    }
+
+    /// <summary>How long a press holds the button in, then how long it takes to come back.</summary>
+    private static readonly TimeSpan PressHold = TimeSpan.FromMilliseconds(120);
+    private static readonly TimeSpan PressRelease = TimeSpan.FromMilliseconds(60);
+
+    /// <summary>Gap between the chassis and a button's label, in window units.</summary>
+    private const double LabelGap = 8;
+
+    /// <summary>How long the label says a press did not go out.</summary>
+    private static readonly TimeSpan LabelFailureTime = TimeSpan.FromSeconds(2.2);
+
+    /// <summary>How long the first-run bubble stays when nobody clicks.</summary>
+    private static readonly TimeSpan SideHintTime = TimeSpan.FromSeconds(7);
+
+    private ChassisControl? _labelFor;
+    private Outward _labelOutward = Outward.Left;
+    private Func<Texts, string>? _labelFailure;
+    private Brush _labelBorder = Brushes.Transparent;
+    private readonly System.Windows.Threading.DispatcherTimer _labelTimer = new() { Interval = LabelFailureTime };
+    private readonly System.Windows.Threading.DispatcherTimer _hintTimer = new();
+
+    /// <summary>The events every chassis button needs, hooked once.</summary>
+    private void WireChassisButtons()
+    {
+        foreach (var control in _chassis)
+        {
+            control.Lamella.RenderTransform = control.Push;
+            control.Hit.RenderTransform = control.Push;
+            control.Hit.MouseEnter += (_, _) => ShowButtonLabel(control);
+            control.Hit.MouseLeave += (_, _) => LeaveButton(control);
+
+            // Keyboard focus lights the button and opens its label, as the
+            // pointer does — but only when the keyboard brought it there. A
+            // mouse press focuses a button too, for an instant, and that is
+            // not something to announce.
+            control.Hit.GotKeyboardFocus += (_, _) =>
+            {
+                if (InputManager.Current.MostRecentInputDevice is KeyboardDevice)
+                    ShowButtonLabel(control);
+            };
+            control.Hit.LostKeyboardFocus += (_, _) => LeaveButton(control);
+        }
+
+        ButtonLabel.CustomPopupPlacementCallback = PlaceButtonLabel;
+
+        _labelTimer.Tick += (_, _) =>
+        {
+            _labelTimer.Stop();
+            _labelFailure = null;
+            if (_labelFor is { } control && (control.Hit.IsMouseOver || control.Hit.IsKeyboardFocused))
+                ShowButtonLabel(control);
+            else
+                HideButtonLabel();
+        };
+        _hintTimer.Tick += (_, _) => HideSideButtonsHint();
+    }
+
+    /// <summary>Names and help texts, in the current language and for the screen's current state.</summary>
+    private void RefreshChassisTexts()
+    {
+        Texts t = T;
+        foreach (var control in _chassis)
+        {
+            AutomationProperties.SetName(control.Hit, LabelTitle(control.Key, t));
+            AutomationProperties.SetHelpText(control.Hit, control.Key switch
+            {
+                ChassisKey.Mute => t.MuteTooltip,
+                ChassisKey.Side => t.SideButtonTooltip,
+                _ => t.NameVolumeButton,
+            });
+        }
+        SideHintText.Text = t.SideButtonsHint;
+
+        if (ButtonLabel.IsOpen && _labelFor is { } open)
+            ShowButtonLabel(open);
+    }
+
+    /// <summary>What the button does, in large on its label.</summary>
+    /// <remarks>
+    /// The side button reads as whichever of its two meanings a press would
+    /// have right now: "Lock" over a lit screen, "Wake screen" over a dark one.
+    /// </remarks>
+    private string LabelTitle(ChassisKey key, Texts t) => key switch
+    {
+        ChassisKey.VolumeUp => t.LabelVolumeUp,
+        ChassisKey.VolumeDown => t.LabelVolumeDown,
+        ChassisKey.Mute => t.LabelMute,
+        _ => _screenDark ? t.LabelWake : t.LabelLock,
+    };
+
+    /// <summary>Which physical button it is, in small under the title.</summary>
+    private static string LabelDetail(ChassisKey key, Texts t) => key switch
+    {
+        ChassisKey.VolumeUp or ChassisKey.VolumeDown => t.NameVolumeButton,
+        ChassisKey.Mute => t.NameActionButton,
+        _ => t.NameSideButton,
+    };
+
+    private ChassisControl? ControlFor(object sender) =>
+        Array.Find(_chassis, control => ReferenceEquals(control.Hit, sender));
 
     /// <summary>
-    /// A drawn side control pressed with the mouse.
+    /// A drawn side control pressed — with the mouse, or with Space or Enter
+    /// once Tab has brought the focus to it.
     /// </summary>
     /// <remarks>
-    /// The event is marked handled first thing, and the twin rectangles live
-    /// outside the screen's border: a press on the metal is never a finger on
-    /// the glass, whichever of the two mouse events WPF delivers first.
+    /// <c>ClickMode.Press</c>, so it goes out on the way down like a real
+    /// button, and the button handles the mouse press itself: a press on the
+    /// metal is never a finger on the glass, whichever of the two mouse events
+    /// WPF delivers first.
     ///
     /// <para>The side button is the one with two meanings, and it has them
     /// because the phone does: the same physical press puts a lit screen to sleep
@@ -2179,58 +2614,386 @@ public partial class MainWindow : Window
     /// to know which of the two the phone is in, and it only knows when the sleep
     /// came from here. See <see cref="DeviceSession.ScreenAsleep"/>.</para>
     /// </remarks>
-    private void OnChassisButtonDown(object sender, MouseButtonEventArgs e)
+    private void OnChassisButtonClick(object sender, RoutedEventArgs e)
     {
-        e.Handled = true;
-        if (sender is not Rectangle target)
+        if (ControlFor(sender) is not { } control)
             return;
 
-        Flash(target);
+        // Focus is for the keyboard. A mouse press hands it straight back to
+        // the stage, as every other click in this window does, so the button
+        // does not stay lit once the pointer has left it.
+        if (InputManager.Current.MostRecentInputDevice is MouseDevice)
+            Stage.Focus();
+
+        HideSideButtonsHint();
+        AnimatePress(control);
 
         if (_input is null)
         {
-            Report("Pas de session : le bouton n'a nulle part où aller.");
+            Report(t => t.NoSessionForButton);
+            ShowButtonFailure(control, t => t.ButtonNotSentNoSession);
             return;
         }
 
-        switch (target.Name)
+        switch (control.Key)
         {
-            case "HitVolUp": Press("volume-up", "Volume +"); break;
-            case "HitVolDn": Press("volume-down", "Volume −"); break;
-            // The rectangle is drawn where the Action button is, and what it
-            // sends is the media Mute key: measured on 9 September, that is the
-            // only one of the two the protocol reaches. See its tooltip.
-            case "HitAction": Press("mute", "Muet"); break;
-            case "HitSide": _ = SideButtonAsync(); break;
+            case ChassisKey.VolumeUp: Press("volume-up", t => t.VolumeUp); break;
+            case ChassisKey.VolumeDown: Press("volume-down", t => t.VolumeDown); break;
+            // Drawn where the Action button is, and what it sends is the media
+            // Mute key: measured on 9 September, that is the only one of the
+            // two the protocol reaches. Its label says so.
+            case ChassisKey.Mute: Press("mute", t => t.Mute); break;
+            case ChassisKey.Side: _ = SideButtonAsync(control); break;
         }
 
-        void Press(string button, string label)
+        void Press(string button, Func<Texts, string> label)
         {
-            Report(label + ".");
-            Post(button, input => input.PressButtonAsync(button));
+            Report(t => label(t) + ".");
+            Post(label, async input =>
+            {
+                try
+                {
+                    await input.PressButtonAsync(button);
+                }
+                catch (Exception)
+                {
+                    // Post reports it; the label says it where the hand is.
+                    _ = Dispatcher.InvokeAsync(() => ShowButtonFailure(control, t => t.ButtonNotSent));
+                    throw;
+                }
+            });
         }
     }
 
     /// <summary>
-    /// Lights a control for a quarter of a second.
+    /// The button goes into the body and darkens, then comes back.
     /// </summary>
     /// <remarks>
-    /// The lamella drawn beside it is a fraction of a millimetre wide, so the
-    /// thing that lights up is the invisible twin that carries the click —
-    /// exactly the shape the hand was aiming at. A fresh brush per press,
-    /// because an animation on a frozen one throws, and the rectangle keeps a
-    /// fully transparent brush afterwards rather than a null one: a null Fill
-    /// would stop taking clicks.
+    /// Timed rather than tied to the mouse button: the press has already gone
+    /// out on the way down, and a keyboard press has no "held" to follow. The
+    /// shift is 1 to 2 window units towards the body — the lamella is barely
+    /// 3 proud, so more would sink it out of sight. Fresh animations each time,
+    /// replacing any still running, so a fast double press restarts cleanly.
     /// </remarks>
-    private static void Flash(Shape target)
+    private void AnimatePress(ChassisControl control)
     {
-        var glow = new SolidColorBrush(Color.FromArgb(0x59, 0xFF, 0xFF, 0xFF));
-        target.Fill = glow;
-        glow.BeginAnimation(SolidColorBrush.ColorProperty,
-            new ColorAnimation(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF), ButtonFlash)
-            {
-                FillBehavior = FillBehavior.HoldEnd,
-            });
+        double depth = Math.Clamp(_border * 0.09, 1.0, 2.0);
+        double inwards = control.Outward is Outward.Left or Outward.Up ? depth : -depth;
+        bool across = control.Outward is Outward.Left or Outward.Right;
+
+        control.Push.BeginAnimation(TranslateTransform.XProperty, null);
+        control.Push.BeginAnimation(TranslateTransform.YProperty, null);
+        control.Push.BeginAnimation(across ? TranslateTransform.XProperty : TranslateTransform.YProperty,
+            HoldThenRelease(inwards));
+        control.Part("Sunk")?.BeginAnimation(OpacityProperty, HoldThenRelease(1.0));
+    }
+
+    private static DoubleAnimationUsingKeyFrames HoldThenRelease(double value)
+    {
+        var animation = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.Stop };
+        animation.KeyFrames.Add(new DiscreteDoubleKeyFrame(value, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        animation.KeyFrames.Add(new DiscreteDoubleKeyFrame(value, KeyTime.FromTimeSpan(PressHold)));
+        animation.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(PressHold + PressRelease)));
+        animation.Freeze();
+        return animation;
+    }
+
+    // --- The label beside a button ------------------------------------------------
+
+    /// <summary>
+    /// Opens the label beside a button, outside the chassis, or refreshes it.
+    /// </summary>
+    /// <remarks>
+    /// It is the one piece of this feature that costs anything to show: a
+    /// popup is a window of its own, made when it opens and gone when it
+    /// closes. That happens once per hover, never per frame, and a closed popup
+    /// costs the render tick nothing at all.
+    /// </remarks>
+    private void ShowButtonLabel(ChassisControl control)
+    {
+        if (control.Hit.Visibility != Visibility.Visible || !IsVisible)
+            return;
+
+        Texts t = T;
+        bool failed = _labelFailure is not null && ReferenceEquals(_labelFor, control);
+        string title = LabelTitle(control.Key, t);
+        string detail = failed ? _labelFailure!(t) : LabelDetail(control.Key, t);
+
+        bool moved = !ReferenceEquals(_labelFor, control) || _labelOutward != control.Outward;
+        bool resized = ButtonLabelTitle.Text != title || ButtonLabelDetail.Text != detail;
+
+        ButtonLabelTitle.Text = title;
+        ButtonLabelDetail.Text = detail;
+        ButtonLabelDetail.Foreground = (Brush)FindResource(failed ? "Error" : "Outline");
+        ButtonLabelCard.BorderBrush = failed ? (Brush)FindResource("Error") : _labelBorder;
+
+        // A popup only works out where to go when it opens, so one that has to
+        // move — another button, or new words of another width — is reopened.
+        if (ButtonLabel.IsOpen && (moved || resized))
+            ButtonLabel.IsOpen = false;
+
+        _labelFor = control;
+        _labelOutward = control.Outward;
+        ButtonLabel.PlacementTarget = control.Hit;
+        ButtonLabel.IsOpen = true;
+    }
+
+    /// <summary>The pointer or the focus has left a button: its label goes, unless it still has news.</summary>
+    private void LeaveButton(ChassisControl control)
+    {
+        if (!ReferenceEquals(_labelFor, control))
+            return;
+        if (control.Hit.IsMouseOver || control.Hit.IsKeyboardFocused)
+            return;
+        if (_labelFailure is not null && _labelTimer.IsEnabled)
+            return;
+        HideButtonLabel();
+    }
+
+    private void HideButtonLabel()
+    {
+        _labelTimer.Stop();
+        _labelFailure = null;
+        _labelFor = null;
+        if (ButtonLabel.IsOpen)
+            ButtonLabel.IsOpen = false;
+    }
+
+    /// <summary>
+    /// Says on the button's own label that a press did not go out, for a
+    /// couple of seconds, whether or not the pointer is still there.
+    /// </summary>
+    private void ShowButtonFailure(ChassisControl control, Func<Texts, string> why)
+    {
+        // A label is a topmost popup: one that failed after the person moved
+        // to another application must not surface over it. The status bar
+        // and the journal have already said it.
+        if (!IsActive && !control.Hit.IsMouseOver)
+            return;
+
+        _labelFor = control;
+        _labelFailure = why;
+        ShowButtonLabel(control);
+        _labelTimer.Stop();
+        _labelTimer.Start();
+    }
+
+    /// <summary>
+    /// Puts the label outside the chassis, level with the button's middle —
+    /// and on the other side, over the picture, only if the screen's edge
+    /// leaves no room outside.
+    /// </summary>
+    /// <remarks>
+    /// The sizes arrive in device pixels, so the gap is scaled the same way.
+    /// Turned sideways the buttons are on the top and bottom edges, and the
+    /// label goes above or below them with its text still level.
+    /// </remarks>
+    private CustomPopupPlacement[] PlaceButtonLabel(Size popup, Size target, Point offset)
+    {
+        double gap = LabelGap * VisualTreeHelper.GetDpi(this).DpiScaleX;
+        double middleY = (target.Height - popup.Height) / 2;
+        double middleX = (target.Width - popup.Width) / 2;
+        Point left = new(-popup.Width - gap, middleY), right = new(target.Width + gap, middleY);
+        Point above = new(middleX, -popup.Height - gap), below = new(middleX, target.Height + gap);
+
+        var (outside, inside, axis) = _labelOutward switch
+        {
+            Outward.Left => (left, right, PopupPrimaryAxis.Horizontal),
+            Outward.Right => (right, left, PopupPrimaryAxis.Horizontal),
+            Outward.Up => (above, below, PopupPrimaryAxis.Vertical),
+            _ => (below, above, PopupPrimaryAxis.Vertical),
+        };
+        return [new CustomPopupPlacement(outside, axis), new CustomPopupPlacement(inside, axis)];
+    }
+
+    // --- Discovery -----------------------------------------------------------------
+
+    /// <summary>The first-run discovery is owed and has not been seen yet.</summary>
+    private bool _hintPending;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    /// <summary>
+    /// Starts the first-run discovery once the window is really in front;
+    /// asked at load and then by the once-a-second beat until it has run.
+    /// </summary>
+    /// <remarks>
+    /// <c>IsActive</c> is not the question. A window started from another
+    /// program is told it is active while Windows keeps the foreground where
+    /// it was — measured on 10 September: launched behind a full-screen game,
+    /// the window spent its discovery on nobody. The foreground window is the
+    /// honest answer, one call a second while it is still owed and none after.
+    /// </remarks>
+    private void TrySideButtonsHint()
+    {
+        if (!_hintPending || WindowState == WindowState.Minimized)
+            return;
+        IntPtr handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || GetForegroundWindow() != handle)
+            return;
+
+        _hintPending = false;
+        ScheduleSideButtonsHint();
+    }
+
+    /// <summary>The first-run discovery, a moment after the window has settled.</summary>
+    private void ScheduleSideButtonsHint()
+    {
+        var wait = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.0) };
+        wait.Tick += (_, _) =>
+        {
+            wait.Stop();
+            ShowSideButtonsHint();
+        };
+        wait.Start();
+    }
+
+    /// <summary>
+    /// The four buttons pulse three times and a bubble says they can be
+    /// clicked. Gone at the first click, or after a few seconds.
+    /// </summary>
+    /// <remarks>
+    /// Three pulses and then nothing: a control that blinks for ever is asking
+    /// to be ignored, and the rest-state accent is what says "clickable" from
+    /// then on. The pulse animates the same halo the pointer lights, for under
+    /// three seconds, and never again unless the system menu asks.
+    /// </remarks>
+    private void ShowSideButtonsHint()
+    {
+        // Sideways with no way to tell which way: the buttons are not drawn,
+        // and a bubble pointing at nothing would be worse than none. The
+        // first-run flag is kept for a later start.
+        if (HitVolUp.Visibility != Visibility.Visible || _border <= 0 ||
+            WindowState == WindowState.Minimized)
+            return;
+
+        HideButtonLabel();
+        PlaceSideHint();
+        SideHint.BeginAnimation(OpacityProperty, null);
+        SideHint.Opacity = 0;
+        SideHint.Visibility = Visibility.Visible;
+        SideHint.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)) { FillBehavior = FillBehavior.Stop });
+        SideHint.Opacity = 1;
+
+        var pulse = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(430))
+        {
+            AutoReverse = true,
+            RepeatBehavior = new RepeatBehavior(3),
+            FillBehavior = FillBehavior.Stop,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+        };
+        pulse.Freeze();
+        foreach (var control in _chassis)
+        {
+            control.Part("Halo")?.BeginAnimation(OpacityProperty, pulse);
+            control.Part("Lit")?.BeginAnimation(OpacityProperty, pulse);
+        }
+
+        _hintTimer.Stop();
+        _hintTimer.Interval = SideHintTime;
+        _hintTimer.Start();
+
+        if (!_settings.ChassisHintShown)
+        {
+            _settings.ChassisHintShown = true;
+            _settings.Save();
+        }
+    }
+
+    private void HideSideButtonsHint()
+    {
+        _hintTimer.Stop();
+        if (SideHint.Visibility != Visibility.Visible)
+            return;
+
+        foreach (var control in _chassis)
+        {
+            control.Part("Halo")?.BeginAnimation(OpacityProperty, null);
+            control.Part("Lit")?.BeginAnimation(OpacityProperty, null);
+        }
+
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(180));
+        fade.Completed += (_, _) =>
+        {
+            // A bubble shown again during the fade has taken over the opacity.
+            if (_hintTimer.IsEnabled)
+                return;
+            SideHint.BeginAnimation(OpacityProperty, null);
+            SideHint.Visibility = Visibility.Collapsed;
+        };
+        SideHint.BeginAnimation(OpacityProperty, fade);
+    }
+
+    /// <summary>The first click anywhere in the window dismisses the bubble, and still does what it does.</summary>
+    protected override void OnPreviewMouseDown(MouseButtonEventArgs e)
+    {
+        base.OnPreviewMouseDown(e);
+        if (SideHint.Visibility == Visibility.Visible && _hintTimer.IsEnabled)
+            HideSideButtonsHint();
+    }
+
+    /// <summary>
+    /// Puts the bubble on the screen beside the left-hand buttons, its arrow
+    /// pointing at the middle of the group, for whichever way up the phone is.
+    /// </summary>
+    private void PlaceSideHint()
+    {
+        bool portrait = _orientation == DeviceGeometry.Orientation.Portrait;
+        double along = portrait ? Device.Height : Device.Width;
+        double across = portrait ? Device.Width : Device.Height;
+
+        // From the top of the Action button to the bottom of Volume -, measured
+        // from the phone's own top whichever way it is turned.
+        double middle = (DeviceGeometry.Action.Top +
+                         DeviceGeometry.VolumeDown.Top + DeviceGeometry.VolumeDown.Length) / 2 * along;
+        double inset = _border + 4;
+
+        SideHintCard.MaxWidth = Math.Clamp((across - 2 * _border) * 0.62, 120, 230);
+
+        switch (_orientation)
+        {
+            case DeviceGeometry.Orientation.Portrait:
+                DockPanel.SetDock(SideHintArrow, Dock.Left);
+                SideHintArrow.LayoutTransform = Transform.Identity;
+                break;
+            // Island left: the phone's left edge is the bottom of the picture.
+            case DeviceGeometry.Orientation.IslandLeft:
+                DockPanel.SetDock(SideHintArrow, Dock.Bottom);
+                SideHintArrow.LayoutTransform = new RotateTransform(-90);
+                break;
+            default:
+                DockPanel.SetDock(SideHintArrow, Dock.Top);
+                SideHintArrow.LayoutTransform = new RotateTransform(90);
+                break;
+        }
+
+        // DesiredSize counts the margin, so the one set last time comes off
+        // first: measured with it, a second placement — the menu asking again,
+        // a resize while the bubble is up — would drift by the old offset.
+        SideHint.Margin = new Thickness(0);
+        SideHint.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Size size = SideHint.DesiredSize;
+
+        switch (_orientation)
+        {
+            case DeviceGeometry.Orientation.Portrait:
+                SideHint.HorizontalAlignment = HorizontalAlignment.Left;
+                SideHint.VerticalAlignment = VerticalAlignment.Top;
+                SideHint.Margin = new Thickness(inset, Math.Max(0, middle - size.Height / 2), 0, 0);
+                break;
+            case DeviceGeometry.Orientation.IslandLeft:
+                SideHint.HorizontalAlignment = HorizontalAlignment.Right;
+                SideHint.VerticalAlignment = VerticalAlignment.Bottom;
+                SideHint.Margin = new Thickness(0, 0, Math.Max(0, middle - size.Width / 2), inset);
+                break;
+            default:
+                SideHint.HorizontalAlignment = HorizontalAlignment.Left;
+                SideHint.VerticalAlignment = VerticalAlignment.Top;
+                SideHint.Margin = new Thickness(Math.Max(0, middle - size.Width / 2), inset, 0, 0);
+                break;
+        }
     }
 
     private async void OnWakeClicked(object sender, RoutedEventArgs e)
@@ -2250,12 +3013,13 @@ public partial class MainWindow : Window
     /// </remarks>
     private void OnBannerDown(object sender, MouseButtonEventArgs e) => e.Handled = true;
 
-    /// <summary>The side button, both ways round.</summary>
-    private async Task SideButtonAsync()
+    /// <summary>The side button, both ways round; a failure is also said on its label.</summary>
+    private async Task SideButtonAsync(ChassisControl control)
     {
         if (_session is not { } session || _input is null)
         {
-            Report("Pas de session : le bouton latéral n'a nulle part où aller.");
+            Report(t => t.NoSessionForSideButton);
+            ShowButtonFailure(control, t => t.ButtonNotSentNoSession);
             return;
         }
 
@@ -2265,32 +3029,36 @@ public partial class MainWindow : Window
             // phone locks itself far more often than anybody clicks this.
             if (_screenDark)
             {
-                await WakeNowAsync(session);
+                if (!await WakeNowAsync(session))
+                    ShowButtonFailure(control, t => t.ButtonNotSent);
             }
             else
             {
-                Report("Verrouillage de l'iPhone…");
+                Report(t => t.LockingIPhone);
                 await session.SleepScreenAsync();
             }
         }
         catch (Exception exception)
         {
-            Fault($"bouton latéral : {exception.Message}");
+            Fault(t => t.SideButtonFailed(exception.Message));
+            ShowButtonFailure(control, t => t.ButtonNotSent);
         }
     }
 
-    /// <summary>Lights the screen, and gets past the lock screen if it can.</summary>
-    private async Task WakeNowAsync(DeviceSession session)
+    /// <summary>Lights the screen, and gets past the lock screen if it can; false when it failed.</summary>
+    private async Task<bool> WakeNowAsync(DeviceSession session)
     {
         try
         {
-            Report("Réveil de l'écran…");
+            Report(t => t.WakingScreen);
             await session.WakeScreenAsync();
             await UnlockAsync();
+            return true;
         }
         catch (Exception exception)
         {
-            Fault($"réveil : {exception.Message}");
+            Fault(t => t.WakeFailed(exception.Message));
+            return false;
         }
     }
 
@@ -2317,13 +3085,13 @@ public partial class MainWindow : Window
         string code = _settings.UnlockCode;
         if (code.Length == 0)
         {
-            Report("Écran allumé — le déverrouillage demande ton visage, ou ton code sur le téléphone.");
+            Report(t => t.ScreenOnUnlockYourself);
             return;
         }
 
         // The count, never the digits: this line goes to the journal like every
         // other one.
-        Report($"Déverrouillage : balayage puis {code.Length} caractère(s) de code…");
+        Report(t => t.Unlocking(code.Length));
         await input.DragAsync(0.5, 0.94, 0.5, 0.40, 280);
         await Task.Delay(900);
         await input.TypeAsync(code);
@@ -2336,17 +3104,17 @@ public partial class MainWindow : Window
         if (!selfSubmitting)
             await input.TypeAsync("\n");
         await Task.Delay(400);
-        Report("Code envoyé. Si l'écran reste verrouillé, c'est le code ou Face ID qu'il faut.");
+        Report(t => t.CodeSent);
     }
 
     private void OnHomeClicked(object sender, RoutedEventArgs e)
     {
         if (_input is null)
         {
-            Report("Pas de session : le bouton n'a nulle part où aller.");
+            Report(t => t.NoSessionForButton);
             return;
         }
-        Post("home", input => input.PressButtonAsync("home"));
+        Post(t => t.Home, input => input.PressButtonAsync("home"));
     }
 
     // --- Engagement ---------------------------------------------------------------
@@ -2371,10 +3139,10 @@ public partial class MainWindow : Window
         Rail.BorderBrush = (Brush)FindResource("Primary");
         Rail.BorderThickness = new Thickness(1.6);
         UpdateState();
-        Report("Pilotage  ·  Ctrl+Alt gauche pour rendre la souris");
+        Report(t => t.Driving);
     }
 
-    private void Disengage(string? reason = null)
+    private void Disengage(Func<Texts, string>? reason = null)
     {
         ReleaseTouch();
         ReleaseKeys();
@@ -2387,9 +3155,7 @@ public partial class MainWindow : Window
         Rail.BorderThickness = new Thickness(0);
         UpdateState();
         Mouse.Capture(null);
-        Report(reason is null
-            ? "Souris rendue à Windows  ·  clic dans l'image pour reprendre"
-            : $"{reason}  Clic dans l'image pour reprendre.");
+        Report(t => reason is null ? t.MouseReturned : t.ClickToResume(reason(t)));
     }
 
     /// <summary>Lifts whatever finger is still down, wherever it is.</summary>
@@ -2603,7 +3369,7 @@ public partial class MainWindow : Window
 
         if (e.ChangedButton == MouseButton.Right)
         {
-            Post("home", input => input.PressButtonAsync("home"));
+            Post(t => t.Home, input => input.PressButtonAsync("home"));
             return;
         }
 
@@ -2694,7 +3460,7 @@ public partial class MainWindow : Window
         double toY = Math.Clamp(fromY + travel, 0, _surfaceHeight - 1);
         var (x, y1) = Normalise(_pointerX, fromY);
         var (_, y2) = Normalise(_pointerX, toY);
-        Post("molette", input => input.DragAsync(x, y1, x, y2, WheelDurationMs));
+        Post(t => t.Wheel, input => input.DragAsync(x, y1, x, y2, WheelDurationMs));
     }
 
     // --- Keyboard --------------------------------------------------------------------
@@ -2855,7 +3621,7 @@ public partial class MainWindow : Window
 
         if (_input is null)
         {
-            Report("Pas de session — rien à coller.");
+            Report(t => t.NoSessionToPaste);
             return;
         }
 
@@ -2867,13 +3633,13 @@ public partial class MainWindow : Window
         catch (Exception)
         {
             // Another process holds the clipboard open; it is not ours to fight over.
-            Report("Presse-papiers illisible — une autre application le tient.");
+            Report(t => t.ClipboardUnreadable);
             return;
         }
 
         if (string.IsNullOrEmpty(text))
         {
-            Report("Presse-papiers vide.");
+            Report(t => t.ClipboardEmpty);
             return;
         }
 
@@ -2881,15 +3647,15 @@ public partial class MainWindow : Window
         {
             try
             {
-                Report($"Envoi de {text.Length} caractère(s) au presse-papiers de l'iPhone…");
+                Report(t => t.SendingClipboard(text.Length));
                 await session.WritePhoneClipboardAsync(text);
-                Report($"{text.Length} caractère(s) dans le presse-papiers de l'iPhone  ·  ⌘V ou appui long pour coller.");
+                Report(t => t.ClipboardSent(text.Length));
                 return;
             }
             catch (Exception exception)
             {
                 // Never the text itself, here or anywhere else that writes a line.
-                Report($"Service presse-papiers indisponible ({exception.Message}) — collage par frappe.");
+                Report(t => t.ClipboardServiceFallback(exception.Message));
             }
         }
 
@@ -2912,14 +3678,14 @@ public partial class MainWindow : Window
 
         if (_session is not { } session || _input is null)
         {
-            Report("Pas de session — le presse-papiers du téléphone est hors de portée.");
+            Report(t => t.NoSessionToFetch);
             return;
         }
 
         _fetching = true;
         try
         {
-            Report("Lecture du presse-papiers de l'iPhone…");
+            Report(t => t.ReadingPhoneClipboard);
             var content = await session.ReadPhoneClipboardSnapshotAsync();
             switch (content.Kind)
             {
@@ -2927,44 +3693,36 @@ public partial class MainWindow : Window
                     try
                     {
                         Clipboard.SetText(text);
-                        Report($"{text.Length} caractère(s) copié(s) depuis l'iPhone.");
+                        Report(t => t.FetchedText(text.Length));
                     }
                     catch (Exception)
                     {
-                        Report("Presse-papiers Windows verrouillé par une autre application — rien copié.");
+                        Report(t => t.WindowsClipboardLocked);
                     }
                     break;
 
                 case ClipboardKind.Image:
-                    Report($"Le presse-papiers de l'iPhone contient une image ({content.Type}, {Weigh(content.Bytes)}) — non transférée.");
+                    Report(t => t.PhoneClipboardImage(content.Type ?? "", content.Bytes));
                     break;
 
                 case ClipboardKind.Data:
-                    Report($"Le presse-papiers de l'iPhone contient des données ({content.Type}, {Weigh(content.Bytes)}) — non transférées.");
+                    Report(t => t.PhoneClipboardData(content.Type ?? "", content.Bytes));
                     break;
 
                 default:
-                    Report("Presse-papiers de l'iPhone vide.");
+                    Report(t => t.PhoneClipboardEmpty);
                     break;
             }
         }
         catch (Exception exception)
         {
-            Fault($"Presse-papiers de l'iPhone illisible : {exception.Message}");
+            Fault(t => t.PhoneClipboardUnreadable(exception.Message));
         }
         finally
         {
             _fetching = false;
         }
     }
-
-    /// <summary>A byte count as a person reads it.</summary>
-    private static string Weigh(int bytes) => bytes switch
-    {
-        < 1024 => $"{bytes} octets",
-        < 1024 * 1024 => $"{bytes / 1024.0:0.#} Ko",
-        _ => $"{bytes / (1024.0 * 1024.0):0.#} Mo",
-    };
 
     /// <summary>
     /// Replays a text as keystrokes on the phone: the fallback, kept whole.
@@ -2980,7 +3738,7 @@ public partial class MainWindow : Window
         var input = _input;
         if (input is null)
         {
-            Report("Pas de session — rien à coller.");
+            Report(t => t.NoSessionToPaste);
             return;
         }
 
@@ -2994,13 +3752,13 @@ public partial class MainWindow : Window
         var strokes = HidKeyboard.Compose(text, out int skipped);
         if (strokes.Count == 0)
         {
-            Report("Rien de saisissable dans le presse-papiers.");
+            Report(t => t.NothingTypeable);
             return;
         }
 
         _pasting = true;
         _cancelPaste = false;
-        PasteLabel.Text = "Arrêter";
+        PasteLabel.Text = T.StopPasting;
 
         try
         {
@@ -3009,13 +3767,13 @@ public partial class MainWindow : Window
             {
                 if (_cancelPaste)
                 {
-                    Report($"Collage interrompu après {i} frappes.");
+                    Report(t => t.PasteCancelled(i));
                     return;
                 }
 
                 if (_input is null)
                 {
-                    Report($"Collage interrompu à {i}/{strokes.Count} — la session est tombée.");
+                    Report(t => t.PasteSessionLost(i, strokes.Count));
                     return;
                 }
 
@@ -3031,20 +3789,15 @@ public partial class MainWindow : Window
                 await Task.Delay(9);
 
                 if (i % 40 == 0)
-                    Report($"Collage… {i}/{strokes.Count}");
+                    Report(t => t.PasteProgress(i, strokes.Count));
             }
 
-            string note = skipped > 0
-                ? $" {skipped} caractère(s) hors de portée du clavier, ignoré(s)."
-                : string.Empty;
-            if (truncated)
-                note += $" Coupé à {Ceiling} caractères.";
-
-            Report($"Collé : {strokes.Count} frappes.{note}");
+            int? cutAt = truncated ? Ceiling : null;
+            Report(t => t.Pasted(strokes.Count, skipped, cutAt));
         }
         catch (Exception exception)
         {
-            Fault($"Collage interrompu : {exception.Message}");
+            Fault(t => t.PasteFailed(exception.Message));
         }
         finally
         {
@@ -3052,7 +3805,7 @@ public partial class MainWindow : Window
             try { await input.KeyboardReportAsync(Array.Empty<int>()); }
             catch (Exception) { /* the session is gone; so is the held key */ }
             _pasting = false;
-            PasteLabel.Text = "Vers l'iPhone";
+            PasteLabel.Text = T.ToIPhone;
         }
     }
 
@@ -3079,28 +3832,28 @@ public partial class MainWindow : Window
         double[] g = _settings.DimGesture;
         if (g.Length != 5)
         {
-            Report("dimGesture attend cinq nombres — luminosité ignorée.");
+            Report(t => t.DimGestureInvalid);
             return;
         }
 
         _dimmed = true;
         try
         {
-            Report("Ouverture du centre de contrôle…");
+            Report(t => t.OpeningControlCentre);
             await input.DragAsync(g[0], g[1], g[0], 0.35, 260);
             await Task.Delay(700);
 
-            Report("Baisse de la luminosité…");
+            Report(t => t.Dimming);
             await input.DragAsync(g[2], g[3], g[2], g[4], 200);
             await Task.Delay(400);
 
             // Close it again: a swipe back up from the bottom.
             await input.DragAsync(0.5, 0.97, 0.5, 0.55, 220);
-            Report("Luminosité baissée. Si ce n'est pas ce qui s'est passé, ajuste dimGesture dans settings.json.");
+            Report(t => t.Dimmed);
         }
         catch (Exception exception)
         {
-            Fault($"Luminosité : {exception.Message}");
+            Fault(t => t.DimFailed(exception.Message));
         }
     }
 }

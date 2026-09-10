@@ -77,7 +77,7 @@ internal sealed class DdiManager
         if (manifestBytes.Length > 8 && manifestBytes.AsSpan(0, 8).SequenceEqual("bplist00"u8))
         { Say("BuildManifest.plist est en plist BINAIRE — lecteur bplist a ecrire."); return DdiStatus.ManifestBinary; }
         var buildManifest = Plist.Read(manifestBytes) as Dictionary<string, object>
-            ?? throw new LuminaException("BuildManifest illisible");
+            ?? throw new LuminaException(CoreTexts.Current.BuildManifestUnreadable);
 
         var mounter = await OpenMounterAsync(Say);
 
@@ -87,7 +87,7 @@ internal sealed class DdiManager
         var mounted = await mounter.MountedImagesAsync();
 
         var ids = (await mounter.QueryPersonalizationIdentifiersAsync())["PersonalizationIdentifiers"] as Dictionary<string, object>
-            ?? throw new LuminaException("pas d'identifiants de personnalisation");
+            ?? throw new LuminaException(CoreTexts.Current.NoPersonalizationIdentifiers);
         var identity = Tss.SelectBuildIdentity(buildManifest, (long)ids["BoardId"], (long)ids["ChipID"]);
 
         string? imageEntry = ManifestPath(identity, "PersonalizedDMG");
@@ -166,7 +166,7 @@ internal sealed class DdiManager
             if (attempt == 0)
             {
                 Say("iPhone VERROUILLE : deverrouille-le, le demontage reprend tout seul (10 min max).");
-                UnlockRequired?.Invoke("iPhone verrouille : le demontage de l'image developpeur attend le deverrouillage.");
+                UnlockRequired?.Invoke(CoreTexts.Current.UnlockForUnmount);
             }
             else if (attempt % 20 == 0) Say($"  toujours verrouille ({attempt * 3} s)…");
             if (attempt >= UnlockAttempts) { Say("Toujours verrouille apres 10 min — relancer mount une fois l'iPhone deverrouille."); mounter.Dispose(); return DdiStatus.StillLocked; }
@@ -179,7 +179,7 @@ internal sealed class DdiManager
         if (ticket is null)
         {
             var nonce = (await mounter.QueryNonceAsync())["PersonalizationNonce"] as byte[]
-                ?? throw new LuminaException("pas de nonce");
+                ?? throw new LuminaException(CoreTexts.Current.NoNonce);
             var request = Tss.BuildRequest(identity, ids, nonce);
             ticket = await Tss.RequestTicketAsync(request, Say);
             Say($"*** TICKET APPLE RECU ({ticket.Length} octets) ***");
@@ -203,7 +203,7 @@ internal sealed class DdiManager
                 if (attempt == 0)
                 {
                     Say("iPhone VERROUILLE : deverrouille-le, le transfert reprend tout seul (10 min max).");
-                    UnlockRequired?.Invoke("iPhone verrouille : l'envoi de l'image developpeur attend le deverrouillage.");
+                    UnlockRequired?.Invoke(CoreTexts.Current.UnlockForUpload);
                 }
                 else if (attempt % 20 == 0) Say($"  toujours verrouille ({attempt * 3} s)…");
                 if (attempt >= UnlockAttempts) { Say("Toujours verrouille apres 10 min — relancer mount une fois l'iPhone deverrouille."); mounter.Dispose(); return DdiStatus.StillLocked; }
@@ -248,7 +248,7 @@ internal sealed class DdiManager
         var pipe = await UsbmuxClient.ConnectAsync();
         var lockdown = new LockdownClient(await pipe.ConnectToDeviceAsync(_deviceId, LockdownPort));
         string? refusal = await lockdown.StartSessionAsync(_record);
-        if (refusal is not null) throw new LuminaException($"StartSession refuse : {refusal}");
+        if (refusal is not null) throw new LuminaException(CoreTexts.Current.StartSessionRefused(refusal));
         var (port, ssl) = await lockdown.StartServiceAsync(ImageMounter.ServiceName);
         var servicePipe = await UsbmuxClient.ConnectAsync();
         Stream service = await servicePipe.ConnectToDeviceAsync(_deviceId, port);

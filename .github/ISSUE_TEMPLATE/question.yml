@@ -1,28 +1,36 @@
-name: Question
-description: Comprendre comment ça marche, ou pourquoi ça ne marche pas
+name: "Question"
+description: "Understand how something works, or why it doesn't / Comprendre comment ça marche, ou pourquoi ça ne marche pas"
 title: "[question] "
 labels: ["question"]
 body:
   - type: markdown
     attributes:
       value: |
-        `README.md`, `docs/INSTALLATION.md` et `docs/ARCHITECTURE.md` répondent
-        peut-être déjà.
+        `README.md`, `docs/INSTALLATION.md` and `docs/ARCHITECTURE.md` may
+        already answer this.
 
-        ⚠️ **Ne colle pas d'identifiants d'appareil** — UDID, numéro de série,
-        adresses des enregistrements d'appairage.
+        ⚠️ **Do not paste device identifiers** — UDID, serial number,
+        pairing record addresses.
+
+        ---
+
+        `README.fr.md`, `docs/INSTALLATION.fr.md` et `docs/ARCHITECTURE.fr.md`
+        répondent peut-être déjà.
+
+        ⚠️ **Ne colle pas d'identifiants d'appareil** — UDID, numéro de
+        série, adresses des enregistrements d'appairage.
 
   - type: textarea
     id: question
     attributes:
-      label: La question
+      label: The question / La question
     validations:
       required: true
 
   - type: input
     id: windows
     attributes:
-      label: Version de Windows
+      label: Windows version / Version de Windows
       placeholder: Windows 11 Pro 24H2 (x64)
     validations:
       required: false
@@ -30,7 +38,7 @@ body:
   - type: input
     id: ios
     attributes:
-      label: Version d'iOS
+      label: iOS version / Version d'iOS
       placeholder: iOS 27.0
     validations:
       required: false
@@ -38,16 +46,16 @@ body:
   - type: input
     id: xcode
     attributes:
-      label: Version d'Xcode d'où vient l'image développeur
-      placeholder: Xcode 27 bêta 6 (.xip)
+      label: Xcode version the Developer Disk Image came from / Version d'Xcode d'où vient l'image développeur
+      placeholder: Xcode 27 beta 6 (.xip)
     validations:
       required: false
 
   - type: textarea
     id: journal
     attributes:
-      label: Extrait de lumina.log, si la question porte sur une exécution
-      description: Quelques lignes suffisent, identifiants d'appareil retirés.
+      label: Excerpt from lumina.log, if the question is about a run / Extrait de lumina.log, si la question porte sur une exécution
+      description: A few lines are enough, device identifiers removed. / Quelques lignes suffisent, identifiants d'appareil retirés.
       render: text
     validations:
       required: false

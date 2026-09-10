@@ -107,7 +107,7 @@ internal static class Tss
             if (ParseNumber(candidate["ApBoardID"]) == boardId && ParseNumber(candidate["ApChipID"]) == chipId)
                 return candidate;
         }
-        throw new InvalidOperationException($"Aucune BuildIdentity pour BoardId {boardId} / ChipID 0x{chipId:X}.");
+        throw new InvalidOperationException(CoreTexts.Current.NoBuildIdentity(boardId, chipId));
     }
 
     /// <summary>Builds the personalization request for the DeveloperDiskImage.</summary>
@@ -237,7 +237,7 @@ internal static class Tss
 
         string status = Between(text, "MESSAGE=", "&") ?? "(pas de MESSAGE)";
         if (status != "SUCCESS")
-            throw new InvalidOperationException($"Le serveur de signature Apple repond : {status} (HTTP {(int)response.StatusCode})");
+            throw new InvalidOperationException(CoreTexts.Current.AppleSigningServer(status, (int)response.StatusCode));
 
         int at = text.IndexOf("REQUEST_STRING=", StringComparison.Ordinal);
         if (at < 0)

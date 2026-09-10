@@ -58,7 +58,7 @@ internal sealed partial class ImageMounter
             }
             catch (TimeoutException)
             {
-                throw new TimeoutException($"Envoi de l'image bloque apres {sent:N0} octets sur {size:N0}.");
+                throw new TimeoutException(CoreTexts.Current.ImageUploadStalled(sent, size));
             }
             sent += read;
             progress?.Invoke(sent);

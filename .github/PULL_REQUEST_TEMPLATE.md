@@ -1,5 +1,5 @@
-**Ce que ça change, et pourquoi** :
+**What this changes, and why** / **Ce que ça change, et pourquoi** :
 
-**Vérifié** : `dotnet build LuminaMonitor.sln -c Release -warnaserror` (0 avertissement, 0 erreur) et les auto-tests hors ligne de la sonde.
+**Verified / Vérifié** : `dotnet build LuminaMonitor.sln -c Release -warnaserror` (0 warnings, 0 errors / 0 avertissement, 0 erreur) and the probe's offline self-tests / et les auto-tests hors ligne de la sonde.
 
-**Testé avec un iPhone** : oui / non — si oui, version d'iOS et version d'Xcode d'où vient l'image développeur.
+**Tested with an iPhone / Testé avec un iPhone** : yes / no — oui / non — if yes, the iOS version and the Xcode version the Developer Disk Image came from / si oui, version d'iOS et version d'Xcode d'où vient l'image développeur.
