@@ -29,3 +29,6 @@ scratchpad/
 # Ce que fabriquent `dotnet publish` et l'empaquetage d'une version.
 publish/
 LuminaMonitor-*-win-x64.zip
+
+# Projet temporaire que WPF laisse derriere lui quand une compilation est interrompue.
+*_wpftmp.csproj
