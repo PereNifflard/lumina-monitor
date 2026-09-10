@@ -349,6 +349,7 @@ public partial class MainWindow : Window
         {
             Report("iPhone branché.");
             _failures = 0;
+            _requestedDelay = null;
             _lastAttemptSeconds = double.NegativeInfinity;
             EnsureSession();
         });
@@ -595,7 +596,15 @@ public partial class MainWindow : Window
 
     private int _failures;
 
-    private double RetryDelay => Math.Min(RetryCeilingSeconds, RetrySeconds * Math.Pow(2, Math.Max(0, _failures - 1)));
+    /// <summary>
+    /// A wait the last refusal asked for itself, overriding the back-off: set
+    /// for a refusal that ends on its own (a phone call), cleared by any other
+    /// outcome. See <see cref="LuminaException.RetryAfterSeconds"/>.
+    /// </summary>
+    private double? _requestedDelay;
+
+    private double RetryDelay => _requestedDelay
+        ?? Math.Min(RetryCeilingSeconds, RetrySeconds * Math.Pow(2, Math.Max(0, _failures - 1)));
 
     /// <summary>
     /// Climbs the ladder whenever there is no session and a phone to climb to.
@@ -667,6 +676,7 @@ public partial class MainWindow : Window
                 _lastReportsSent = 0;
                 _lastMovesDropped = 0;
                 _failures = 0;
+                _requestedDelay = null;
                 HideUnlockBanner();
                 Report(_diagnosticSeconds > 0
                     ? "Miroir ouvert."
@@ -679,7 +689,18 @@ public partial class MainWindow : Window
             await DropAsync(session);
             await Dispatcher.InvokeAsync(() =>
             {
-                _failures++;
+                // A refusal with its own short end (a call in progress) keeps
+                // the back-off out of it: the person hangs up, and the mirror
+                // should follow within seconds rather than half a minute.
+                if (exception is LuminaException { RetryAfterSeconds: int soon })
+                {
+                    _requestedDelay = soon;
+                }
+                else
+                {
+                    _requestedDelay = null;
+                    _failures++;
+                }
                 // Apple's multiplexer is worth a banner and a button: it is the
                 // one failure the person can act on without touching the phone.
                 if (exception is LuminaException { AppleMultiplexer: true })

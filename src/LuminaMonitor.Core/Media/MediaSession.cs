@@ -258,12 +258,27 @@ internal sealed class MediaSession
         }
         catch (InvalidOperationException exception)
         {
-            // The gate may be closed on this iOS; the reports are still worth
-            // sending, to learn whether the daemon takes them without it.
+            // The phone said no. Kept as a result rather than thrown, because
+            // the probe still wants to try a touch without the gate open; the
+            // session reads Streaming and FailureCode and decides for itself.
             Failure = exception.Message;
+            FailureCode = CoreDeviceCode(exception.Message);
             string reason = exception.Message.Replace("\r", "").Replace("\n", " ");
-            Say($"Porte media indisponible — essai du tap sans flux video. Motif : {(reason.Length > 200 ? reason[..200] + "…" : reason)}");
+            Say($"Flux video refuse par le telephone (code {FailureCode?.ToString() ?? "?"}) : {(reason.Length > 200 ? reason[..200] + "…" : reason)}");
         }
+    }
+
+    /// <summary>
+    /// The CoreDevice error code of the last refusal: 9022 while a phone or
+    /// VoIP call is up, 9021 on an iOS too old for remote control. Null when
+    /// the stream was accepted or the refusal carried no code.
+    /// </summary>
+    public int? FailureCode { get; private set; }
+
+    private static int? CoreDeviceCode(string message)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(message, @"\bcode\s*=\s*(\d+)");
+        return match.Success && int.TryParse(match.Groups[1].Value, out int code) ? code : null;
     }
 
     /// <summary>Asks the encoder for a fresh key frame, at most once a second.</summary>

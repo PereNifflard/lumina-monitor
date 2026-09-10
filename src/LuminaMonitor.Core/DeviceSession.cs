@@ -431,6 +431,26 @@ public sealed class DeviceSession : IAsyncDisposable
             Warn($"Service d'affichage muet ({_deafOpenings}e fois de suite) : {exception.Message}");
             throw;
         }
+
+        // A refused stream is not a mirror. Carrying on to MediaUp here once
+        // left the window announcing "mirror open" over a picture that never
+        // came, with the watchdog asleep because nothing had ever started — a
+        // phone call had simply been in progress. The climb stops, says why in
+        // words, and a refusal that ends on its own is retried within seconds.
+        if (!media.Streaming)
+        {
+            throw media.FailureCode switch
+            {
+                9022 => new LuminaException(
+                    "Appel en cours sur l'iPhone : iOS interdit le miroir pendant un appel. L'image revient seule à la fin de l'appel.")
+                    { RetryAfterSeconds = 10 },
+                9021 => new LuminaException(
+                    "Le pilotage à distance demande iOS 27 ou plus sur l'iPhone."),
+                _ => new LuminaException(
+                    $"Le téléphone a refusé le flux vidéo{(media.FailureCode is int c ? $" (code {c})" : "")}."),
+            };
+        }
+
         var hid = await _rsd.OpenAsync(HidReports.ServiceName, writePatience: InputInjector.ChannelPatience);
         _input = new InputInjector(_rsd, hid);
         var surfaces = await _input.ListSurfacesAsync();

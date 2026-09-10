@@ -24,4 +24,18 @@ public sealed class LuminaException : Exception
     /// said in the message and left at that.
     /// </remarks>
     public bool AppleMultiplexer { get; init; }
+
+    /// <summary>
+    /// A refusal that ends on its own, soon: try again after this many seconds
+    /// instead of backing off.
+    /// </summary>
+    /// <remarks>
+    /// The window's retry doubles its wait up to half a minute, because a
+    /// display service that refuses a stream renews its refusal each time it is
+    /// asked. That rule is for a daemon that needs rest. A phone call is not
+    /// one: iOS refuses to mirror a screen while a call is up, the refusal is
+    /// immediate and cheap, and the person hangs up whenever they like — so the
+    /// mirror should come back within seconds of it, not thirty.
+    /// </remarks>
+    public int? RetryAfterSeconds { get; init; }
 }
