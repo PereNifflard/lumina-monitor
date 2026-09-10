@@ -1,0 +1,145 @@
+name: release
+
+# Sur un tag « v… », publie une version téléchargeable : deux exécutables
+# autonomes (aucun runtime .NET à installer), zippés et attachés à une Release
+# GitHub créée par « gh », l'outil déjà présent sur le runner — aucune action
+# tierce n'entre ici.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Récupérer les sources
+        uses: actions/checkout@v4
+
+      - name: Installer le SDK .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # v1.2.3 -> version « 1.2.3 » pour le nom du zip, et « 1.2.3 » aussi pour
+      # les métadonnées de l'exe. Un suffixe (v1.2.3-beta1) reste dans le nom du
+      # zip mais pas dans la version numérique, que MSBuild refuserait.
+      - name: Lire la version dans le tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($version -match '^\d+(\.\d+){0,2}') { $numeric = $Matches[0] } else { $numeric = '0.0.0' }
+          while (($numeric -split '\.').Count -lt 3) { $numeric += '.0' }
+          $prerelease = if ($version -match '-') { 'true' } else { 'false' }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "numeric=$numeric"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "prerelease=$prerelease"
+          Write-Host "Version $version (numérique $numeric, préversion $prerelease)"
+
+      - name: Construire (Release, zéro avertissement toléré)
+        run: dotnet build LuminaMonitor.sln -c Release -warnaserror
+
+      # Un seul .exe : le runtime .NET, WPF et les ressources sont dedans,
+      # compresses — 69 Mo au lieu de 155, contre quelques secondes au tout
+      # premier lancement, le temps que l'exe se deploie dans le cache.
+      - name: Publier l'app en fichier unique
+        run: >
+          dotnet publish src/LuminaMonitor.App
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -p:Version=${{ steps.version.outputs.numeric }}
+          -p:InformationalVersion=${{ steps.version.outputs.version }}
+          -o publish
+
+      # La sonde de diagnostic voyage dans le même dossier : c'est elle qu'on
+      # demande de lancer quand quelque chose ne va pas.
+      - name: Publier la sonde en fichier unique
+        run: >
+          dotnet publish src/LuminaMonitor.UsbProbe
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -p:Version=${{ steps.version.outputs.numeric }}
+          -p:InformationalVersion=${{ steps.version.outputs.version }}
+          -o publish
+
+      - name: Media Foundation (nécessaire à mf-selftest)
+        shell: pwsh
+        run: |
+          try {
+            $feature = Get-WindowsFeature -Name Server-Media-Foundation -ErrorAction Stop
+            if ($feature.InstallState -ne 'Installed') {
+              Write-Host 'Media Foundation absente : installation.'
+              $result = Install-WindowsFeature -Name Server-Media-Foundation -ErrorAction Stop
+              if ($result.RestartNeeded -eq 'Yes') {
+                Write-Host '::warning::Media Foundation demande un redémarrage ; mf-selftest peut échouer sur ce runner.'
+              }
+            } else {
+              Write-Host 'Media Foundation déjà installée.'
+            }
+          } catch {
+            Write-Host "::notice::Impossible de vérifier Media Foundation ($($_.Exception.Message)) — on tente mf-selftest tel quel."
+          }
+
+      # Les mêmes auto-tests que l'intégration, mais lancés depuis l'exécutable
+      # empaqueté : c'est la preuve que le fichier unique démarre vraiment.
+      - name: Auto-tests hors ligne, depuis le binaire publié
+        shell: pwsh
+        run: |
+          $probe = 'publish/LuminaMonitor.UsbProbe.exe'
+          foreach ($test in @('formats-check', 'offer-check', 'sps-selftest', 'watchdog-selftest', 'tcp-selftest')) {
+            Write-Host "=== $test"
+            & $probe $test
+            if ($LASTEXITCODE -ne 0) {
+              throw "$test a rendu $LASTEXITCODE"
+            }
+          }
+          # mf-selftest depend du decodeur H.264 de Windows, facultatif sur
+          # Windows Server et parfois installable seulement apres redemarrage.
+          # Sur la machine d'un utilisateur il est toujours la ; ici il avertit
+          # au lieu de bloquer une publication pour une absence du runner.
+          Write-Host '=== mf-selftest'
+          & $probe mf-selftest
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::mf-selftest a rendu $LASTEXITCODE sur ce runner (Media Foundation absente ?)."
+          }
+
+      # Le nom du tag arrive par l'environnement, jamais interpole dans le
+      # corps du script : une expression ${{ }} est collee dans le source
+      # PowerShell avant qu'il ne s'execute, donc un tag bien choisi y
+      # deviendrait du code. $env:VERSION, lui, reste une chaine.
+      - name: Fabriquer l'archive
+        id: package
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          Remove-Item -Path publish/*.pdb -Force -ErrorAction SilentlyContinue
+          Copy-Item -Path LICENSE, README.md -Destination publish/
+          Copy-Item -Path docs/INSTALLATION.md -Destination publish/
+          $zip = "LuminaMonitor-$env:VERSION-win-x64.zip"
+          Compress-Archive -Path publish/* -DestinationPath $zip -Force
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "zip=$zip"
+          Get-ChildItem publish, $zip | Format-Table Name, Length
+
+      - name: Créer la Release et y attacher l'archive
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ZIP: ${{ steps.package.outputs.zip }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          $arguments = @(
+            'release', 'create', $env:GITHUB_REF_NAME,
+            $env:ZIP,
+            '--title', "Lumina Monitor $env:VERSION",
+            '--generate-notes'
+          )
+          if ($env:PRERELEASE -eq 'true') { $arguments += '--prerelease' }
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw "gh release create a rendu $LASTEXITCODE" }

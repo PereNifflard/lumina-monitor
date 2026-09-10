@@ -1,0 +1,14 @@
+version: 2
+
+# Le projet n'a aucune dépendance de paquets — ni NuGet, ni npm, rien. Les
+# seules choses versionnées venant de l'extérieur sont les actions GitHub des
+# deux workflows.
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "ci"

@@ -1,0 +1,78 @@
+name: Bogue
+description: Quelque chose ne marche pas
+title: "[bogue] "
+labels: ["bogue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Avant tout : regarde `%APPDATA%\LuminaMonitor\lumina.log`, et la section
+        **Dépannage** de `docs/INSTALLATION.md`.
+
+        ⚠️ **Ne colle pas d'identifiants d'appareil** — UDID, numéro de série,
+        adresses des enregistrements d'appairage. Remplace-les par `…` dans ce
+        que tu copies.
+
+  - type: textarea
+    id: symptome
+    attributes:
+      label: Ce qui se passe
+      description: Et ce que tu attendais à la place.
+      placeholder: Le miroir s'ouvre, puis se fige au bout de dix secondes.
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Version de Windows
+      placeholder: Windows 11 Pro 24H2 (x64)
+    validations:
+      required: true
+
+  - type: input
+    id: ios
+    attributes:
+      label: Version d'iOS
+      description: Modèle d'iPhone si tu l'as sous la main.
+      placeholder: iOS 27.0, iPhone 17 Pro Max
+    validations:
+      required: true
+
+  - type: input
+    id: xcode
+    attributes:
+      label: Version d'Xcode d'où vient l'image développeur
+      description: L'archive que tu as donnée à l'app au premier lancement (`.xip` Xcode ou `.dmg` Device Support).
+      placeholder: Xcode 27 bêta 6 (.xip)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version de Lumina Monitor
+      description: Le nom du zip téléchargé, ou « compilé depuis les sources ».
+      placeholder: LuminaMonitor-1.0.0-win-x64.zip
+    validations:
+      required: true
+
+  - type: textarea
+    id: journal
+    attributes:
+      label: Extrait de lumina.log
+      description: Les lignes autour du problème, pas le fichier entier. Identifiants d'appareil retirés.
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: verifications
+    attributes:
+      label: Vérifications
+      options:
+        - label: L'app **Appareils Apple** tourne, et l'iPhone est appairé.
+        - label: Le **Mode développeur** est actif sur le téléphone.
+        - label: Aucune autre session en cours (une seule fenêtre, pas de sonde en parallèle).
+        - label: J'ai retiré les identifiants d'appareil de ce que j'ai collé.
+          required: true

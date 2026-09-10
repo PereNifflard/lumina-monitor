@@ -1,0 +1,253 @@
+﻿<Application x:Class="LuminaMonitor.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:LuminaMonitor.App"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+
+        <!-- ============================================ Lumina Monitor ===
+             Palette, typographie et formes reprises de DESIGN.md. Deux ecarts,
+             tous deux demandes explicitement et donc assumes :
+
+               * la charte fait flotter la barre de commandes au-dessus du
+                 contenu ; elle est sous le telephone, parce qu'au-dessus elle
+                 tombait en pleine zone de navigation ;
+               * la charte decrit un « phone frame » generique en #1a1a1a ; le
+                 chassis est un iPhone 17 Pro Max dessine aux cotes reelles.
+                 C'est le meme composant, en plus specifique.
+
+             Un troisieme ecart est technique. Le glassmorphisme de la charte
+             repose sur backdrop-blur : WPF n'en a pas, et le simuler voudrait
+             dire un shader par image sur de la video en direct — exactement ce
+             qu'on s'interdit depuis la chasse a la latence. Le verre est donc
+             rendu par un remplissage translucide et un liseré blanc a 8 %, qui
+             est la moitie visible de l'effet. -->
+
+        <!-- ====================================================== Surfaces -->
+        <SolidColorBrush x:Key="Surface"          Color="#131313" />
+        <SolidColorBrush x:Key="SurfaceLowest"    Color="#0E0E0E" />
+        <SolidColorBrush x:Key="SurfaceLow"       Color="#1C1B1B" />
+        <SolidColorBrush x:Key="SurfaceContainer" Color="#201F1F" />
+        <SolidColorBrush x:Key="SurfaceHigh"      Color="#2A2A2A" />
+        <SolidColorBrush x:Key="SurfaceHighest"   Color="#353534" />
+
+        <SolidColorBrush x:Key="OnSurface"        Color="#E5E2E1" />
+        <SolidColorBrush x:Key="OnSurfaceVariant" Color="#C0C7D4" />
+        <SolidColorBrush x:Key="Outline"          Color="#8A919E" />
+        <SolidColorBrush x:Key="OutlineVariant"   Color="#404752" />
+
+        <!-- ======================================================= Accents -->
+        <SolidColorBrush x:Key="Primary"          Color="#A3C9FF" />
+        <SolidColorBrush x:Key="OnPrimary"        Color="#00315C" />
+        <SolidColorBrush x:Key="PrimaryContainer" Color="#0078D4" />
+        <SolidColorBrush x:Key="Secondary"        Color="#C2C1FF" />
+        <SolidColorBrush x:Key="Error"            Color="#FFB4AB" />
+        <SolidColorBrush x:Key="SuccessPulse"     Color="#22C55E" />
+        <SolidColorBrush x:Key="Warn"             Color="#FFC773" />
+
+        <!-- ========================================================= Verre -->
+        <SolidColorBrush x:Key="GlassSurface" Color="#1AFFFFFF" />
+        <SolidColorBrush x:Key="GlassBorder"  Color="#14FFFFFF" />
+        <SolidColorBrush x:Key="GlassHover"   Color="#26FFFFFF" />
+
+        <!-- Lueur ambiante : deux taches derriere le telephone. Un
+             RadialGradientBrush donne le flou directement, sans effet et donc
+             sans cout par image. -->
+        <RadialGradientBrush x:Key="AmbientBlue" GradientOrigin="0.5,0.5">
+            <GradientStop Color="#38A3C9FF" Offset="0.0" />
+            <GradientStop Color="#14A3C9FF" Offset="0.45" />
+            <GradientStop Color="#00A3C9FF" Offset="1.0" />
+        </RadialGradientBrush>
+        <RadialGradientBrush x:Key="AmbientViolet" GradientOrigin="0.5,0.5">
+            <GradientStop Color="#2EC2C1FF" Offset="0.0" />
+            <GradientStop Color="#12C2C1FF" Offset="0.45" />
+            <GradientStop Color="#00C2C1FF" Offset="1.0" />
+        </RadialGradientBrush>
+
+        <!-- =================================================== Typographie
+             Inter et Hanken Grotesk ne sont installees ni sur cette machine ni
+             dans l'executable : le proprietaire a tranche pour Segoe UI plutot
+             que d'embarquer des fichiers de polices tiers. Les listes restent
+             ecrites en entier malgre tout — elles ne coutent rien, et si les
+             faces sont posees un jour sur le systeme, la charte s'applique
+             d'elle-meme sans toucher au code. -->
+        <FontFamily x:Key="DisplayFont">Hanken Grotesk, Inter, Segoe UI</FontFamily>
+        <FontFamily x:Key="BodyFont">Inter, Segoe UI</FontFamily>
+        <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
+
+        <!-- ========================================================= Formes
+             rounded: sm 4, DEFAULT 8, md 12, lg 16, xl 24, full 9999 -->
+        <CornerRadius x:Key="RadiusSm">4</CornerRadius>
+        <CornerRadius x:Key="RadiusMd">12</CornerRadius>
+        <CornerRadius x:Key="RadiusLg">16</CornerRadius>
+        <CornerRadius x:Key="RadiusFull">999</CornerRadius>
+
+        <!-- ======================================================= Boutons
+             Le template par defaut de WPF (Aero2) reaffecte #BEE6FD sur son
+             propre Border au survol, ce qui ecrase le Background qu'on lui
+             pose. Poser une couleur ne suffit donc pas : il faut reprendre le
+             template pour que la couleur ecrite soit celle qui s'affiche. -->
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource GlassSurface}" />
+            <Setter Property="Foreground" Value="{StaticResource OnSurface}" />
+            <Setter Property="FontFamily" Value="{StaticResource BodyFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Skin" CornerRadius="12"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{StaticResource GlassBorder}"
+                                BorderThickness="1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Skin" Property="Background"
+                                        Value="{StaticResource GlassHover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Skin" Property="Background" Value="#0DFFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Skin" Property="BorderBrush"
+                                        Value="{StaticResource Primary}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.38" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Bouton de la barre de commandes : pictogramme puis mot. Le mot
+             reste lisible meme si la police d'icones manque. -->
+        <Style x:Key="BarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="Foreground" Value="{StaticResource OnSurfaceVariant}" />
+        </Style>
+
+        <!-- Bouton rond, pour la navigation de haut niveau. -->
+        <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Foreground" Value="{StaticResource OnSurfaceVariant}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Skin" CornerRadius="999"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Skin" Property="Background"
+                                        Value="{StaticResource GlassSurface}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Skin" Property="Background" Value="#0DFFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ==================================================== Chassis ===
+             Un rail en aluminium anodise : la lumiere frappe les deux tranches
+             chanfreinees, la face plate au centre reste sombre. Le degrade
+             traverse la largeur, il ne tourne pas — un degrade diagonal donne
+             du plastique, pas du metal usine.
+
+             LES BORNES NE SONT PAS CHOISIES A VUE. Du rail, on ne voit qu'une
+             bande etroite tout autour : le verre noir, pose a MetalShare x
+             bordure, recouvre tout le reste. Cette bande vaut
+
+                 0.45 x 0.032829 = 0.01477 de la largeur du corps
+
+             (0.032829 etant bordure / corps, une constante : les deux grandissent
+             ensemble, donc la fraction ne depend pas de la taille de la fenetre).
+
+             La version precedente placait sa borne claire a 0.12, soit huit fois
+             plus loin que le bord du verre. Mesure sur capture : le rail ne
+             montrait que neuf pixels allant de #4B2310 a #632F15, luminance 42 a
+             56 — le sixieme le plus sombre d'un degrade de neuf bornes. Les six
+             bornes du milieu etaient peintes sous un rectangle noir opaque et
+             n'ont jamais pu etre vues. Le chanfrein est donc ramene DANS la bande
+             visible, a 0.0035, soit un quart de sa largeur.
+
+             Les bornes du milieu servent toujours : en haut et en bas du corps,
+             le meme degre horizontal court sur toute la largeur et s'y voit
+             entierement. -->
+        <LinearGradientBrush x:Key="ChassisCosmicOrange" StartPoint="0,0.5" EndPoint="1,0.5">
+            <GradientStop Color="#5A2A12" Offset="0.0000" />
+            <GradientStop Color="#F5B27A" Offset="0.0035" />
+            <GradientStop Color="#C96A2C" Offset="0.0085" />
+            <GradientStop Color="#8E4218" Offset="0.0148" />
+            <GradientStop Color="#A9501F" Offset="0.5000" />
+            <GradientStop Color="#8E4218" Offset="0.9852" />
+            <GradientStop Color="#C96A2C" Offset="0.9915" />
+            <GradientStop Color="#F5B27A" Offset="0.9965" />
+            <GradientStop Color="#5A2A12" Offset="1.0000" />
+        </LinearGradientBrush>
+        <SolidColorBrush x:Key="RailCosmicOrange" Color="#8E4218" />
+
+        <!-- Les trois tons d'un bouton, du boitier vers l'exterieur : le joint a
+             l'ombre, le chanfrein qui prend la lumiere, puis le plat du bouton
+             vu presque par la tranche, donc sombre. Le plan Apple place la ligne
+             de chanfrein a 0,205 mm des 0,45 mm de saillie, ce qui fixe ou la
+             partie claire s'arrete. -->
+        <Color x:Key="BtnJointCosmicOrange">#7A3A16</Color>
+        <Color x:Key="BtnChamferCosmicOrange">#F2A96C</Color>
+        <Color x:Key="BtnFaceCosmicOrange">#C06229</Color>
+
+        <LinearGradientBrush x:Key="ChassisDeepBlue" StartPoint="0,0.5" EndPoint="1,0.5">
+            <GradientStop Color="#16202F" Offset="0.0000" />
+            <GradientStop Color="#8299BF" Offset="0.0035" />
+            <GradientStop Color="#3B4E6C" Offset="0.0085" />
+            <GradientStop Color="#22304A" Offset="0.0148" />
+            <GradientStop Color="#1A2537" Offset="0.5000" />
+            <GradientStop Color="#22304A" Offset="0.9852" />
+            <GradientStop Color="#3B4E6C" Offset="0.9915" />
+            <GradientStop Color="#8299BF" Offset="0.9965" />
+            <GradientStop Color="#16202F" Offset="1.0000" />
+        </LinearGradientBrush>
+        <SolidColorBrush x:Key="RailDeepBlue" Color="#16202F" />
+
+        <Color x:Key="BtnJointDeepBlue">#131C2A</Color>
+        <Color x:Key="BtnChamferDeepBlue">#7189B1</Color>
+        <Color x:Key="BtnFaceDeepBlue">#2A3A55</Color>
+
+        <LinearGradientBrush x:Key="ChassisSilver" StartPoint="0,0.5" EndPoint="1,0.5">
+            <GradientStop Color="#7C8189" Offset="0.0000" />
+            <GradientStop Color="#F8FAFC" Offset="0.0035" />
+            <GradientStop Color="#CFD3D9" Offset="0.0085" />
+            <GradientStop Color="#9CA1A9" Offset="0.0148" />
+            <GradientStop Color="#B4B9C0" Offset="0.5000" />
+            <GradientStop Color="#9CA1A9" Offset="0.9852" />
+            <GradientStop Color="#CFD3D9" Offset="0.9915" />
+            <GradientStop Color="#F8FAFC" Offset="0.9965" />
+            <GradientStop Color="#7C8189" Offset="1.0000" />
+        </LinearGradientBrush>
+        <SolidColorBrush x:Key="RailSilver" Color="#8B9097" />
+
+        <Color x:Key="BtnJointSilver">#787D85</Color>
+        <Color x:Key="BtnChamferSilver">#F2F4F6</Color>
+        <Color x:Key="BtnFaceSilver">#AEB3BA</Color>
+
+    </Application.Resources>
+</Application>

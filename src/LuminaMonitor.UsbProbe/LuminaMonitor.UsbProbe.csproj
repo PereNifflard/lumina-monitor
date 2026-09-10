@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\LuminaMonitor.Formats\LuminaMonitor.Formats.csproj" />
+    <ProjectReference Include="..\LuminaMonitor.Core\LuminaMonitor.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Plain net8.0-windows: this probe only needs sockets and XML, both in-box.
+         No WinRT, no NuGet — the whole point is that every byte on the wire is ours. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>LuminaMonitor.UsbProbe</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

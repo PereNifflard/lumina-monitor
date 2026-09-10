@@ -1,0 +1,89 @@
+name: build
+
+# Le dépôt est à zéro avertissement : la construction se fait avec
+# -warnaserror pour que ça le reste. Les auto-tests qui suivent sont ceux
+# qui ne demandent ni iPhone ni réseau ; les autres ne peuvent pas tourner
+# sur un runner.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Récupérer les sources
+        uses: actions/checkout@v4
+
+      - name: Installer le SDK .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Construire (Release, zéro avertissement toléré)
+        run: dotnet build LuminaMonitor.sln -c Release -warnaserror
+
+      # mf-selftest instancie le décodeur H.264 de Windows. Sur Windows Server,
+      # Media Foundation est une fonctionnalité facultative ; on l'ajoute si
+      # elle manque, sans faire échouer l'étape quand elle est déjà là.
+      - name: Media Foundation (nécessaire à mf-selftest)
+        shell: pwsh
+        run: |
+          try {
+            $feature = Get-WindowsFeature -Name Server-Media-Foundation -ErrorAction Stop
+            if ($feature.InstallState -ne 'Installed') {
+              Write-Host 'Media Foundation absente : installation.'
+              $result = Install-WindowsFeature -Name Server-Media-Foundation -ErrorAction Stop
+              if ($result.RestartNeeded -eq 'Yes') {
+                Write-Host '::warning::Media Foundation demande un redémarrage ; mf-selftest peut échouer sur ce runner.'
+              }
+            } else {
+              Write-Host 'Media Foundation déjà installée.'
+            }
+          } catch {
+            Write-Host "::notice::Impossible de vérifier Media Foundation ($($_.Exception.Message)) — on tente mf-selftest tel quel."
+          }
+
+      # Chaque auto-test doit rendre 0. La sonde rend un code non nul quand un
+      # scénario échoue, donc il n'y a rien à interpréter dans la sortie.
+      - name: Auto-tests hors ligne de la sonde
+        shell: pwsh
+        run: |
+          $probe = 'src/LuminaMonitor.UsbProbe/bin/Release/net8.0-windows/LuminaMonitor.UsbProbe.exe'
+          $tests = @(
+            'formats-check',      # lecteurs xar / pbzx / xz / cpio, sur une archive fabriquée
+            'offer-check',        # l'offre média, comparée octet pour octet au gabarit Xcode
+            'sps-selftest',       # la réécriture du SPS, relue et repassée
+            'watchdog-selftest',  # l'échelle de la veille du flux, sur des instants inventés
+            'tcp-selftest'        # la pile TCP du tunnel contre un téléphone de papier
+          )
+          foreach ($test in $tests) {
+            Write-Host "=== $test"
+            & $probe $test
+            if ($LASTEXITCODE -ne 0) {
+              throw "$test a rendu $LASTEXITCODE"
+            }
+          }
+          # mf-selftest depend du decodeur H.264 de Windows, facultatif sur
+          # Windows Server et parfois installable seulement apres redemarrage.
+          # Toujours present sur la machine d'un utilisateur ; ici il avertit
+          # au lieu de faire echouer la construction pour une absence du runner.
+          Write-Host '=== mf-selftest'
+          & $probe mf-selftest
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::mf-selftest a rendu $LASTEXITCODE sur ce runner (Media Foundation absente ?)."
+          }
+
+      - name: Téléverser l'app compilée
+        uses: actions/upload-artifact@v4
+        with:
+          name: LuminaMonitor.App-Release
+          path: src/LuminaMonitor.App/bin/Release/net8.0-windows/
+          if-no-files-found: error

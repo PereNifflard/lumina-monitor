@@ -1,0 +1,31 @@
+# Build outputs
+bin/
+obj/
+*.user
+
+# Apple's Developer Disk Image, extracted locally from Xcode — never committed.
+# Nor what it is extracted from: an Xcode archive is 2 GB of Apple's binaries,
+# and every user downloads their own.
+#
+# Anchored to the repository root on purpose. Written "ddi*/", the pattern also
+# matched src/LuminaMonitor.Core/Ddi/ on Windows, where git matches ignore rules
+# without regard to case — and silently dropped five source files the solution
+# needs, including the image mounter and the TSS client. Anything named ddi*
+# lower in the tree is ours; only the root ones are Apple's.
+/ddi*/
+*.xip
+*.dmg
+*.pkg
+
+# Working notes and measurement material from a session: screenshots of the
+# phone under test, captures, intermediate images. Private by nature.
+scratchpad/
+
+# What a run leaves on the disk: the journal, RTP captures, decoded frames.
+*.log
+*.rtp
+*.bmp
+
+# Ce que fabriquent `dotnet publish` et l'empaquetage d'une version.
+publish/
+LuminaMonitor-*-win-x64.zip

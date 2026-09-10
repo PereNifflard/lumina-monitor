@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The Apple protocol itself: usbmux, lockdown, the CoreDevice tunnel,
+         RemoteXPC, the image mounter and the HID surfaces. Every byte on the
+         wire is composed here; the desktop app only sees DeviceSession. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LuminaMonitor.Core</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The NV12 to BGRA conversion writes straight into a bitmap back buffer
+         and reads the picture through vector intrinsics: both need pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LuminaMonitor.Formats\LuminaMonitor.Formats.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The probe drives the low-level bricks directly; the app does not. -->
+    <InternalsVisibleTo Include="LuminaMonitor.UsbProbe" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- net8.0-windows10.0.22621.0 rather than plain net8.0-windows: the probe
+         talks to the in-box BLE stack through WinRT (GattServiceProvider), and
+         the WinRT projections only exist when the TFM names a Windows SDK. -->
+    <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
+    <RootNamespace>LuminaMonitor.BleProbe</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,12 @@
+# Un seul style de fin de ligne dans le dépôt : LF. Chacun garde le sien dans
+# sa copie de travail, Windows compris — sans cela, un clone sous Linux ou un
+# diff sur GitHub montre un fichier entier modifié pour un caractère invisible.
+* text=auto eol=lf
+
+# Sauf ce que Windows lit lui-même en CRLF.
+*.sln text eol=crlf
+*.csproj text eol=crlf
+
+# Et ce qui n'est pas du texte.
+*.png binary
+*.ico binary

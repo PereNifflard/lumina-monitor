@@ -1,0 +1,53 @@
+name: Question
+description: Comprendre comment ça marche, ou pourquoi ça ne marche pas
+title: "[question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `README.md`, `docs/INSTALLATION.md` et `docs/ARCHITECTURE.md` répondent
+        peut-être déjà.
+
+        ⚠️ **Ne colle pas d'identifiants d'appareil** — UDID, numéro de série,
+        adresses des enregistrements d'appairage.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: La question
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Version de Windows
+      placeholder: Windows 11 Pro 24H2 (x64)
+    validations:
+      required: false
+
+  - type: input
+    id: ios
+    attributes:
+      label: Version d'iOS
+      placeholder: iOS 27.0
+    validations:
+      required: false
+
+  - type: input
+    id: xcode
+    attributes:
+      label: Version d'Xcode d'où vient l'image développeur
+      placeholder: Xcode 27 bêta 6 (.xip)
+    validations:
+      required: false
+
+  - type: textarea
+    id: journal
+    attributes:
+      label: Extrait de lumina.log, si la question porte sur une exécution
+      description: Quelques lignes suffisent, identifiants d'appareil retirés.
+      render: text
+    validations:
+      required: false

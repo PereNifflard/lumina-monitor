@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The only thing the window knows about the phone: DeviceSession, the
+         input injector and a decoded picture. Not a socket in sight. -->
+    <ProjectReference Include="..\LuminaMonitor.Core\LuminaMonitor.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The mark, for the waiting card. -->
+    <Resource Include="..\..\assets\lumina-monitor-256.png" Link="assets\lumina-monitor-256.png" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>LuminaMonitor.App</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+
+    <AssemblyName>LuminaMonitor.App</AssemblyName>
+    <Product>Lumina Monitor</Product>
+    <AssemblyTitle>Lumina Monitor</AssemblyTitle>
+
+    <!-- The icon embedded in the exe: it is what the task bar shows while the
+         application runs, and WPF falls back to it for the window itself. -->
+    <ApplicationIcon>..\..\assets\lumina-monitor.ico</ApplicationIcon>
+    <!-- The manifest declares per-monitor DPI awareness. Without it Windows
+         stretches the window after the fact on a monitor that is not scaled
+         like the primary one: see app.manifest. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+</Project>

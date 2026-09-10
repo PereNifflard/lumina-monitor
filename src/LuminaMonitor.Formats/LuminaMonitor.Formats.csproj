@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Readers for the formats Apple wraps its Developer Disk Image in:
+         xar (XIP), pbzx / xz / LZMA2, cpio, UDIF (DMG), APFS. All written
+         here, from the published specifications, because Windows reads none
+         of them and the project ships no third-party code. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LuminaMonitor.Formats</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The readers are internal by design; the probe and the app are the
+         only consumers and live in this solution. -->
+    <InternalsVisibleTo Include="LuminaMonitor.UsbProbe" />
+    <InternalsVisibleTo Include="LuminaMonitor.Core" />
+  </ItemGroup>
+
+</Project>

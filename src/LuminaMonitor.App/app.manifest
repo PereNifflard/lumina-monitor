@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1"
+          xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+
+  <assemblyIdentity version="1.0.0.0" name="LuminaMonitor.App" />
+
+  <!--
+    Per-monitor DPI awareness, and it matters here for a reason beyond tidiness.
+
+    Without it WPF is system-DPI aware: it draws at the primary monitor's
+    scaling and lets Windows stretch the result to whatever the actual monitor
+    uses. On this machine the primary screen runs at 100 % and the one the app
+    lives on at 150 %, so a window the application believed was 563 x 1194
+    arrived on screen as 845 x 1791 pixels — 351 pixels taller than the 1440-px
+    display, with the bottom simply gone.
+
+    The picture paid for it too. The video was decoded, scaled to 1080 units,
+    rasterised, and only then blown up by half again by the compositor: a
+    bitmap stretch of an already-flattened image, which is exactly the blur
+    the mirror is supposed to avoid. Per-monitor awareness hands WPF the real
+    pixel grid, so the frame is scaled once, from the source, at the size it
+    will actually be shown.
+  -->
+  <asmv3:application>
+    <asmv3:windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+    </asmv3:windowsSettings>
+  </asmv3:application>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 and 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+
+</assembly>
