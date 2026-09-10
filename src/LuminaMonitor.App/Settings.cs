@@ -9,10 +9,12 @@ namespace LuminaMonitor.App;
 /// </summary>
 /// <remarks>
 /// Stored under <c>%APPDATA%\LuminaMonitor</c> rather than beside the
-/// executable. Nothing secret lives here any more — the phone is reached over
-/// the cable with Apple's own pairing record, so there is no token and no
-/// passcode to lose. What remains is where the developer image was unpacked,
-/// which way up the window was left, and two cosmetic choices.
+/// executable. Nothing secret is <i>needed</i> here — the phone is reached over
+/// the cable with Apple's own pairing record, so there is no token to lose —
+/// and the one field that can hold a secret, <see cref="UnlockCode"/>, is empty
+/// unless somebody puts their passcode in it on purpose. What remains is where
+/// the developer image was unpacked, which way up the window was left, and a
+/// few cosmetic choices.
 /// </remarks>
 public sealed class Settings
 {
@@ -94,6 +96,28 @@ public sealed class Settings
     /// </remarks>
     [JsonPropertyName("chassisColour")]
     public string ChassisColour { get; set; } = "orange";
+
+    /// <summary>
+    /// The phone's passcode, for unlocking it from the window. Empty, and empty
+    /// is the right answer for almost everybody.
+    /// </summary>
+    /// <remarks>
+    /// <b>Written in clear in this file.</b> There is no way around that: the
+    /// keypad on the lock screen wants the digits themselves, and a passcode
+    /// this app cannot read is a passcode it cannot type. So the trade is stated
+    /// rather than hidden — anybody who can read
+    /// <c>%APPDATA%\LuminaMonitor\settings.json</c> can read the phone's
+    /// passcode, which on a machine where the phone is already trusted and
+    /// plugged in is a smaller step than it sounds, and still a step. Leave it
+    /// empty and use Face ID; fill it only if unlocking without touching the
+    /// phone is worth that to you.
+    ///
+    /// <para>It never reaches the journal. The window types it on the virtual
+    /// keyboard and says how many digits went out, never which ones, and no
+    /// status line, counter or log line in this project carries the value.</para>
+    /// </remarks>
+    [JsonPropertyName("unlockCode")]
+    public string UnlockCode { get; set; } = "";
 
     /// <summary>Where the window was when it was last closed. Zero means centre it.</summary>
     [JsonPropertyName("windowBounds")]

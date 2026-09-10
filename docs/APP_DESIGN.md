@@ -19,7 +19,7 @@ géométrie, rendu, tap différé, réglages) est conservée.
 | `VideoReceiver` → `OnFrame(bgra, w, h, stride)` | `DeviceSession.FrameDecoded(VideoFrame)` ; `frame.Bgra` (conversion NV12→BGRA paresseuse, sur le fil de décodage) puis copie dans `_pending` |
 | `InputBridgeClient` (TCP 9 octets, 0..32767) | `session.Input` : `TouchDownAsync/MoveAsync/UpAsync`, `TapAsync`, `DragAsync`, `PressButtonAsync`, `KeyboardReportAsync` (nouveau, voir plus bas) |
 | mode relatif, ré-ancrage, `Nudge`, `KeepAwake`, `PingBridge`, `KeepBridgeConnected` | supprimés (le pointeur est absolu par nature ; la session Core gère l'état) |
-| réglages `VideoPort`, `BridgeHost/Port/Token`, `AbsolutePointer` | supprimés ; ajout `DdiFolder` (dossier « copie de Restore/ ») et `LastArchive` (xip ou dmg d'où la DDI a été extraite) |
+| réglages `VideoPort`, `BridgeHost/Port/Token`, `AbsolutePointer` | supprimés ; ajout `DdiFolder` (dossier « copie de Restore/ »), `LastArchive` (xip ou dmg d'où la DDI a été extraite) et `UnlockCode` (vide par défaut, voir plus bas) |
 | `LatencyProbe`, `Mp4Writer` | retirés de l'app (restent dans le dépôt Pi) |
 
 ## Entrées → Core
@@ -28,9 +28,98 @@ géométrie, rendu, tap différé, réglages) est conservée.
   d'origine puis `TouchMoveAsync` à chaque mouvement (limiter à ~120 Hz), `TouchUpAsync` au relâchement ou à la perte de capture.
 - Molette : balayage = `DragAsync` vertical de 220 px image par cran, 90 ms, au point du pointeur. Un cran vers le bas fait défiler le contenu vers le bas, donc glisse le doigt vers le HAUT ; inversé si `InvertWheel` (faux par défaut).
 - Bouton droit : `PressButtonAsync("home")`. Milieu : rien.
-- Boutons dessinés sur le châssis (XAML) : clic = `PressButtonAsync` (`volume-up`, `volume-down`, `lock`, `mute` si présent).
 - Clavier : `OnPreviewKeyDown/Up` → `HidKeyboard.Translate` → ensemble des usages tenus → `session.Input.KeyboardReportAsync(usages)`
-  (rapport 39 octets, surface 512). Collage (F2) → `HidKeyboard.Compose(texte)` → séquence de rapports. Ctrl+Alt gauche = quitter le pilotage.
+  (rapport 39 octets, surface 512). Ctrl+Alt gauche = quitter le pilotage.
+
+## Boutons du châssis
+Les lamelles dessinées font une fraction de millimètre : le clic est porté par quatre rectangles
+transparents (`HitVolUp`, `HitVolDn`, `HitAction`, `HitSide`), larges comme la tranche de métal, posés
+par `ShapeButtons` en même temps que les lamelles et retournés avec l'orientation.
+
+- `MouseLeftButtonDown` marque l'événement `Handled` **avant tout**, et les rectangles vivent hors de
+  la bordure de l'écran : un clic sur le métal n'est jamais un doigt sur le verre — le test de position
+  d'`OnMouseDown` le rattraperait de toute façon.
+- Retour visuel : `Flash` pose un `SolidColorBrush` blanc à 35 % sur le rectangle cliqué et l'anime
+  vers le transparent en 280 ms (`ColorAnimation`, brosse neuve à chaque clic — une brosse figée ne
+  s'anime pas ; brosse transparente et non `null` à l'arrivée, sinon le rectangle cesse de prendre les
+  clics). Infobulle sur chacun des quatre.
+- Volume + / − → `PressButtonAsync("volume-up" / "volume-down")` : la pastille de volume apparaît sur
+  le bord gauche, mesuré le 9 septembre (`scratchpad/chassis/10-volume-up.bmp` et `11-…`).
+- Le rectangle posé sur le **bouton Action** envoie `"mute"` — et c'est la touche **Muet du clavier
+  média** : la pastille de volume tombe à zéro puis revient au second appui. Le bouton Action
+  lui-même (bascule sonnerie/silencieux) **n'est pas atteignable** par la page Consumer ; l'infobulle
+  le dit, l'étiquette d'état dit « Muet » et non « Silencieux ».
+- **Bouton latéral : deux sens, comme sur le téléphone.** Écran allumé → `session.SleepScreenAsync()`
+  (`lock`, page Consumer 0x30 maintenu 500 ms) ; écran éteint → `session.WakeScreenAsync()` puis
+  `UnlockAsync()`.
+- **`WakeScreenAsync` presse `home` (Consumer 0x40), pas 0x30**, et c'est une mesure et non un choix :
+  la touche Power n'est pas une bascule. Tapée 40 ms puis remaintenue 500 ms, l'image décodée est
+  restée à **0,0/255** de luminance ; `home` rallume en moins d'une seconde et les paquets
+  remontent de 2/s à 66/s. Le nom `wake` a été retiré de la table des boutons plutôt que gardé
+  comme une commande qui ne fait rien.
+- `UnlockAsync` est la limite honnête de la fonction : réveiller est un appui et marche toujours,
+  déverrouiller demande Face ID (un visage devant le téléphone) ou le code. Si `Settings.UnlockCode`
+  est rempli, la fenêtre balaie vers le haut (`DragAsync(0.5, 0.94 → 0.40, 280 ms)`, un vrai glissement :
+  un seul rapport se lit comme une téléportation), attend 900 ms et tape le code au clavier virtuel ;
+  un code de 4 ou 6 chiffres est validé par iOS tout seul, tout autre reçoit un retour chariot. Sinon
+  elle dit qu'il faut le visage ou le téléphone, et ne prétend rien avoir déverrouillé. **Le code ne
+  part jamais dans le journal** : les lignes d'état ne comptent que les caractères.
+
+## Verrouillage et session
+**Ce que le verrouillage fait au flux, mesuré le 9 septembre 2026** (sonde `chassis-test`) : le flux
+**ne s'arrête pas**. Après `lock`, le débit tombe de 42 paquets/s et 40 images/s à **2 paquets/s et
+1 image/s d'images entièrement noires** (luminance 0,0/255), l'état reste `MediaUp`, et **aucun**
+échelon de la veille n'est déclenché — 0 demande d'image clé, 0 relance de flux, 0 reset doux — parce
+que des paquets continuent d'arriver. Il n'y a donc **rien à remonter** : `home` rallume l'écran et
+l'image revient d'elle-même en moins d'une seconde. Le garde-fou ci-dessous existe pour le cas où un
+sommeil plus long finirait par tarir complètement le flux.
+
+`DeviceSession.ScreenAsleep` vaut vrai **uniquement** quand c'est cette session qui a endormi l'écran ;
+un appui de la main sur le vrai bouton ne se voit pas d'ici, et prétendre le contraire serait pire.
+Ce que ça achète : la différence entre « il n'y a plus rien à photographier » et « le miroir est
+cassé », indiscernables du compteur de paquets et qui demandent des réponses opposées.
+
+- `DeviceSession.OnStallAsync` ignore les échelons de la veille tant que `ScreenAsleep` (une image clé
+  irait à un encodeur sans rien à encoder, une relance de flux dépenserait la patience du service
+  d'affichage, un reset doux réclamerait justement le déverrouillage qui n'a pas eu lieu). Les échelons
+  ignorés sont comptés, et `WakeScreenAsync` appelle `MediaSession.RearmWatch()` : un échelon ignoré
+  laisse la veille à mi-échelle avec une issue due que personne ne rapportera jamais, donc sourde pour
+  le reste de la session.
+- **`WatchDarkScreen` (une fois par seconde) décide du bandeau, et il voit aussi les verrouillages
+  que l'app n'a pas commandés** — c'est-à-dire le cas ordinaire, le téléphone qui se verrouille tout
+  seul deux minutes après le dernier toucher. Le discriminant est le débit : un écran allumé, même
+  parfaitement immobile, envoie 40 à 60 images/s ; un écran éteint en envoie **une** ; un flux
+  vraiment mort n'en envoie **aucune**. Donc « il arrive entre 1 et 3 images/s depuis 4 secondes »
+  = écran noir, et le seuil est loin des deux bords.
+- Bandeau **`LockBanner`** au centre de l'image (« iPhone verrouillé · l'écran est éteint, le flux
+  tourne au ralenti, rien n'est cassé ») avec un bouton « Réveiller l'écran ». Le pilotage est rendu
+  (`Disengage`), la pastille passe à « verrouillé », et `WatchStream` **ne dit plus** « Flux arrêté » :
+  c'était exactement le moment où une chose normale avait l'air d'une panne. Le bandeau disparaît
+  avec la session (`Resetting`, `Faulted`, `Detached`, débranchement).
+- Le bouton latéral se décide sur `_screenDark`, pas sur `session.ScreenAsleep` : sinon un clic sur un
+  téléphone qui s'est verrouillé seul enverrait `lock` sur un écran déjà éteint. `ScreenSleepChanged`
+  ne fait que rendre la décision immédiate quand le sommeil vient d'ici (`DecideDarkScreen`, sans
+  toucher au compteur : replier une fraction de seconde dans la fenêtre d'une seconde rendrait
+  fictif le débit qu'elle mesure, et ce débit est tout l'instrument).
+
+## Presse-papiers, dans les deux sens
+Le service `com.apple.coredevice.pasteboardservice` (dialecte XPC direct, verbes `PULL`/`SET`) est
+réimplémenté dans `Core/RemoteXpc/PasteboardService.cs` ; `DeviceSession` l'ouvre à la demande et
+raccroche après — un presse-papiers sert quelques fois par heure, un canal tenu ouvert serait une
+chose de plus à reconstruire après chaque incident.
+
+| Geste | Chemin |
+|---|---|
+| **F2** / bouton « Vers l'iPhone » | `session.WritePhoneClipboardAsync(texte)` — le texte arrive entier et instantané, accents et emoji compris. **Repli** si le service refuse : la frappe caractère par caractère d'avant (`HidKeyboard.Compose`), et la barre d'état le dit, pour qu'un collage lent et lossy ne passe pas pour le rapide. |
+| **F4** / bouton « Depuis l'iPhone » | `session.ReadPhoneClipboardSnapshotAsync()` → `Clipboard.SetText` ; « 42 caractère(s) copié(s) depuis l'iPhone ». |
+
+- F4 est testé sans Alt : Windows livre Alt+F4 comme `Key.System` avec F4 dessous, et sans ce test le
+  seul raccourci que tout le monde connaît pour fermer une fenêtre irait chercher un presse-papiers.
+- Le presse-papiers du téléphone tient très souvent une photo : `ClipboardContent` porte le genre
+  (`Nothing`, `Text`, `Image`, `Data`), l'UTI et la taille, et la fenêtre annonce « une image
+  (public.png, 1,2 Mo) — non transférée » plutôt que de rendre une chaîne vide qui se lirait « il n'y
+  avait rien ». Le contenu lui-même ne va **jamais** dans le journal, seulement les comptes.
+- **Aucune synchronisation automatique** : rien ne part tout seul, dans aucun sens.
 - Nouveau dans Core : `InputInjector.KeyboardReportAsync(IReadOnlyCollection<int> usagesHeld)` (état complet, sans réponse) ;
   `TypeAsync` s'appuie dessus. Sonde : commande `keys <texte>` pour prouver la surface 512 (on ouvre Notes et on regarde).
 
@@ -74,3 +163,8 @@ automatique à l'échéance. Sert aux tests sans personne devant l'écran.
 - Build 0 avertissement ; `--diagnostic 20` : atteint `MediaUp`, ≥ 30 images/s présentées, aucune exception dans le journal.
 - Sonde `keys bonjour` : le texte apparaît dans Notes (constat de visu).
 - Manuel (à l’œil) : tap, appui long, glisser, molette, boutons, frappe ; latence perçue ; orientation paysage.
+- Sonde `chassis-test` : une image décodée par bouton, luminance moyenne à côté — un écran éteint et un
+  flux arrêté se ressemblent dans un journal et jamais dans une image. Puis deux verrouillages, un court
+  et un long, avec les débits seconde par seconde.
+- Sonde `clipboard` puis `clipboard <texte>` : lecture, écriture, relecture (l'écriture sans relecture
+  ne prouve rien).

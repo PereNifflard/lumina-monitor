@@ -45,7 +45,22 @@ public sealed class DeviceSession : IAsyncDisposable
     public Task DisconnectAsync();
     public InputInjector Input { get; }                // valide quand State >= MediaUp (boutons dès TunnelUp+DDI)
     public Task<bool> RebuildInputAsync();             // rouvre le seul canal HID ; false ⇒ la session passe Faulted
+
+    // Écran : « endormi » n'est connu que si c'est cette session qui l'a endormi.
+    public bool ScreenAsleep { get; }
+    public event Action<bool>? ScreenSleepChanged;
+    public Task SleepScreenAsync();                    // « lock » (Consumer 0x30, 500 ms) ; la veille du flux est suspendue
+    public Task WakeScreenAsync();                     // « home » (Consumer 0x40) — 0x30 n'est PAS une bascule, mesuré ; réarme la veille.
+                                                       // Le DÉVERROUILLAGE reste Face ID ou le code
+
+    // Presse-papiers du téléphone (com.apple.coredevice.pasteboardservice) : service ouvert à la demande, raccroché après.
+    public Task<string?> ReadPhoneClipboardAsync();
+    public Task<ClipboardContent> ReadPhoneClipboardSnapshotAsync();   // genre + UTI + taille : une image n'est pas « vide »
+    public Task WritePhoneClipboardAsync(string text);
 }
+
+public enum ClipboardKind { Nothing, Text, Image, Data }
+public readonly record struct ClipboardContent(ClipboardKind Kind, string? Text, string? Type, int Bytes);
 
 public sealed record DdiSource(string Folder);         // dossier « copie de Restore/ » (ddi27) ; l'extraction reste une commande à part
 

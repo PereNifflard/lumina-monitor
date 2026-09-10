@@ -91,7 +91,7 @@ jobs:
         shell: pwsh
         run: |
           $probe = 'publish/LuminaMonitor.UsbProbe.exe'
-          foreach ($test in @('formats-check', 'offer-check', 'sps-selftest', 'watchdog-selftest', 'tcp-selftest')) {
+          foreach ($test in @('formats-check', 'offer-check', 'sps-selftest', 'watchdog-selftest', 'tcp-selftest', 'aac-selftest')) {
             Write-Host "=== $test"
             & $probe $test
             if ($LASTEXITCODE -ne 0) {

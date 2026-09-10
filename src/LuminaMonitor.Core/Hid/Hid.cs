@@ -224,8 +224,15 @@ internal static class IndigoHid
     /// <summary>Named buttons → (usage page, usage, hold in ms). iOS tells a tap from a hold by the time held.</summary>
     public static readonly Dictionary<string, (ushort Page, ushort Code, int HoldMs)> Named = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["home"] = (0x0C, 0x40, 50),          // Consumer / Menu
-        ["lock"] = (0x0C, 0x30, 500),         // Consumer / Power, held long enough to sleep
+        // Consumer / Menu. It is also the only thing measured to bring a dark
+        // screen back: see the note on "lock" below.
+        ["home"] = (0x0C, 0x40, 50),
+        // Consumer / Power. Held half a second it puts the screen out and locks
+        // the phone — measured on 9 September 2026, decoded frame at luminance
+        // 0.0/255 and the packet rate down from 42/s to 2/s. It does NOT toggle:
+        // the same usage tapped for 40 ms, and held again for 500 ms, both leave
+        // the screen dark. Waking is "home".
+        ["lock"] = (0x0C, 0x30, 500),
         ["volume-up"] = (0x0C, 0xE9, 50),     // Consumer / Volume Increment
         ["volume-down"] = (0x0C, 0xEA, 50),   // Consumer / Volume Decrement
         ["mute"] = (0x0C, 0xE2, 50),          // Consumer / Mute

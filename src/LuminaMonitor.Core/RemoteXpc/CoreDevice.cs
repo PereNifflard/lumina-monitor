@@ -68,6 +68,23 @@ internal static class DisplayService
             "com.apple.coredevice.action.mediastreamgetsupportinfo", new Dictionary<string, object?>());
 
     /// <summary>
+    /// The media-stream server's state, and the sessions it still believes are
+    /// running.
+    /// </summary>
+    /// <remarks>
+    /// The one window into what our own crashes leave behind. A media session
+    /// the phone was never told to stop — the process killed, the cable pulled —
+    /// stays in this list, and while it is there the daemon can refuse the next
+    /// offer outright ("a phone or VoIP call is in progress", error 9022) and,
+    /// on the audio side, the capture session it belongs to is never handed
+    /// back. Read at the start of every session, so that whatever the last run
+    /// left can be closed before a new one is asked for.
+    /// </remarks>
+    public static Task<Dictionary<string, object?>> GetMediaStreamServerStatusAsync(RemoteXpc service) =>
+        CoreDevice.InvokeAsync(service, "com.apple.coredevice.feature.getmediastreamserverstatus",
+            "com.apple.coredevice.action.mediastreamstatus", new Dictionary<string, object?>());
+
+    /// <summary>
     /// Starts an RTP video stream of a display towards our tunnel address.
     /// The receiver port must be listening before the call: the phone starts
     /// sending the moment it answers.
@@ -97,6 +114,59 @@ internal static class DisplayService
             ["senderIP"] = senderIp,
             ["timeout"] = new XpcUInt64(timeoutSeconds),
             ["type"] = "video",
+        };
+        return CoreDevice.InvokeAsync(service, "com.apple.coredevice.feature.startmediastream",
+            "com.apple.coredevice.action.mediastreamstart", input, TimeSpan.FromSeconds(12));
+    }
+
+    /// <summary>
+    /// Starts an RTP <b>audio</b> stream of the phone's system output towards
+    /// our tunnel address. Same ceremony as the video: the receiver port must
+    /// already be listening, because the phone starts sending the moment it
+    /// answers.
+    /// </summary>
+    /// <remarks>
+    /// Three differences from <see cref="StartVideoStreamAsync"/>, and no
+    /// others: <c>type</c> is <c>"audio"</c>, the offer is built in negotiator
+    /// mode 6, and the two display options — <c>CoreDeviceVideoDisplayMode</c>
+    /// and <c>VideoStreamForDisplayID</c> — are absent, there being no display
+    /// to name. The answer carries <c>source: {audioSystemOutput: {}}</c>, which
+    /// is the phone naming what it is sending us.
+    ///
+    /// <para><paramref name="sessionId"/> is what groups the two streams:
+    /// Xcode's mirror starts audio with the <em>same</em>
+    /// <c>avcMediaStreamOptionClientSessionID</c> as its video, so one stop
+    /// takes both down.</para>
+    ///
+    /// <para><paramref name="direction"/> is <c>"output"</c> in every capture
+    /// and in every reference implementation; it is a parameter here only so the
+    /// probe can ask the phone what it makes of <c>"input"</c> and report the
+    /// refusal verbatim.</para>
+    /// </remarks>
+    public static Task<Dictionary<string, object?>> StartAudioStreamAsync(RemoteXpc service,
+        string receiverIp, ushort receiverPort, string senderIp, XpcUuid sessionId,
+        byte[] negotiatorOffer, ulong timeoutSeconds = 20,
+        ulong clientSupportedFeatures = DefaultClientSupportedFeatures,
+        long accessNetworkType = DefaultAccessNetworkType,
+        long transportProtocolType = DefaultTransportProtocolType,
+        string direction = "output")
+    {
+        var input = new Dictionary<string, object?>
+        {
+            ["clientSupportedFeatures"] = new XpcUInt64(clientSupportedFeatures),
+            ["direction"] = direction,
+            ["negotiatorOffer"] = negotiatorOffer,
+            ["options"] = new Dictionary<string, object?>
+            {
+                ["AVCMediaStreamNegotiatorAccessNetworkType"] = new Dictionary<string, object?> { ["int"] = new XpcInt64(accessNetworkType) },
+                ["AVCMediaStreamNegotiatorTransportProtocolType"] = new Dictionary<string, object?> { ["int"] = new XpcInt64(transportProtocolType) },
+                ["avcMediaStreamOptionClientSessionID"] = new Dictionary<string, object?> { ["uuid"] = sessionId },
+            },
+            ["receiverIP"] = receiverIp,
+            ["receiverPort"] = new XpcUInt64(receiverPort),
+            ["senderIP"] = senderIp,
+            ["timeout"] = new XpcUInt64(timeoutSeconds),
+            ["type"] = "audio",
         };
         return CoreDevice.InvokeAsync(service, "com.apple.coredevice.feature.startmediastream",
             "com.apple.coredevice.action.mediastreamstart", input, TimeSpan.FromSeconds(12));

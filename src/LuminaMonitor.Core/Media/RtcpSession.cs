@@ -34,8 +34,17 @@ internal sealed class RtcpSession
     /// arrival times into timestamp units so the phone can compare the two. Sent
     /// in the wrong clock the jitter is off by the ratio of the two, and the
     /// encoder is being told about a network that does not exist.
+    ///
+    /// <para>The audio stream runs on a different clock — its own timestamps
+    /// advance at the sample rate, 48 kHz — so the figure is a constructor
+    /// parameter rather than a constant, defaulting to the video's.</para>
     /// </remarks>
-    private const int JitterClock = 24_000;
+    public const int VideoJitterClock = 24_000;
+
+    /// <summary>The audio stream's RTP clock: 48 kHz, one unit per sample.</summary>
+    public const int AudioJitterClock = 48_000;
+
+    private readonly int _jitterClock;
 
     /// <summary>NTP counts from 1900, not 1970.</summary>
     private static readonly DateTime NtpEpoch = new(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -61,12 +70,14 @@ internal sealed class RtcpSession
     private bool _haveTransit;
     private RctlFeedback? _rctl;
 
-    public RtcpSession(uint localSsrc, uint remoteSsrc, ushort sourcePort, Func<ushort, ReadOnlyMemory<byte>, Task> send)
+    public RtcpSession(uint localSsrc, uint remoteSsrc, ushort sourcePort, Func<ushort, ReadOnlyMemory<byte>, Task> send,
+        int jitterClock = VideoJitterClock)
     {
         _localSsrc = localSsrc;
         _remoteSsrc = remoteSsrc;
         _configuredPort = sourcePort;
         _send = send;
+        _jitterClock = jitterClock;
     }
 
     public long ReportsSent { get; private set; }
@@ -167,7 +178,7 @@ internal sealed class RtcpSession
             // between the packet spacing on the wire and in the timestamps.
             if (_haveTransit)
             {
-                double elapsed = (arrivalTicks - _lastTransitTicks) * (double)JitterClock / Stopwatch.Frequency;
+                double elapsed = (arrivalTicks - _lastTransitTicks) * (double)_jitterClock / Stopwatch.Frequency;
                 double difference = Math.Abs(elapsed - (int)(timestamp - _lastTransitTimestamp));
                 _jitter += (difference - _jitter) / 16.0;
             }
@@ -232,7 +243,7 @@ internal sealed class RtcpSession
                         SenderClock = sent;
                         // The phone's clock when it stamped the newest picture
                         // we hold, against the moment that picture reached us.
-                        double media = unchecked((int)(_lastTransitTimestamp - senderTimestamp)) * 1000.0 / JitterClock;
+                        double media = unchecked((int)(_lastTransitTimestamp - senderTimestamp)) * 1000.0 / _jitterClock;
                         double waited = (Stopwatch.GetTimestamp() - _lastTransitTicks) * 1000.0 / Stopwatch.Frequency;
                         PipelineMs = (DateTime.UtcNow - sent).TotalMilliseconds - media - waited;
                     }

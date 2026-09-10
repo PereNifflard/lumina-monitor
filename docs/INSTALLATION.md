@@ -89,13 +89,74 @@ Appareils Apple** du bandeau s'en charge.
 | **Clic droit** | bouton principal, retour à l'accueil |
 | **Molette** | défilement, un cran = un glissement de doigt ; réglage `invertWheel` pour l'autre sens |
 | **Clavier** | tout part sur le clavier virtuel du téléphone, accents et touches mortes compris |
-| **Boutons dessinés sur le châssis** | volume haut/bas, verrouillage, bouton Action — ce sont les vrais qui sont pressés |
-| **F2** | tape le presse-papiers Windows sur le téléphone (F2 et pas Ctrl+V : pendant le pilotage, Ctrl+V partirait au téléphone, qui attend Cmd+V) |
+| **Boutons dessinés sur le châssis** | volume haut/bas, muet, bouton latéral — ce sont les vrais boutons du téléphone qui sont pressés ; le bouton cliqué s'illumine un quart de seconde |
+| **Bouton à l'emplacement du bouton Action** | coupe et rétablit le **son** (touche Muet). Le bouton Action lui-même — la bascule sonnerie/silencieux — n'est pas atteignable par ce protocole, et l'app ne fait pas semblant |
+| **Bouton latéral** | éteint l'écran ; quand l'écran est éteint, le même bouton le rallume (voir « Verrouiller, déverrouiller » plus bas) |
+| **F2** | envoie le presse-papiers Windows **dans le presse-papiers de l'iPhone** (⌘V ou appui long pour coller sur le téléphone). F2 et pas Ctrl+V : pendant le pilotage, Ctrl+V partirait au téléphone, qui attend Cmd+V |
+| **F4** | récupère le presse-papiers de l'iPhone dans celui de Windows |
 | **F3** | affiche les compteurs : images/s, latence, rapports envoyés, erreurs |
 
-Les réglages (sens de la molette, couleur du châssis, position de la fenêtre)
-vivent dans `%APPDATA%\LuminaMonitor\settings.json`. Rien de secret n'y est
-écrit : l'appairage appartient à Apple, l'app se contente de le lire.
+Les deux boutons **Vers l'iPhone** et **Depuis l'iPhone** de la barre du bas font
+la même chose que F2 et F4.
+
+### Presse-papiers
+
+Le téléphone a un presse-papiers et il s'écrit par le câble : le texte arrive
+**entier et instantané**, accents et emoji compris, et se colle ensuite sur le
+téléphone comme n'importe quel copier-coller entre appareils Apple. Si le service
+refuse (iOS plus ancien, service absent de l'annuaire), l'app retombe sur
+l'ancienne méthode — taper le texte au clavier virtuel, caractère par caractère —
+et **le dit dans la barre d'état**, pour qu'un collage lent ne passe pas pour le
+rapide.
+
+Dans l'autre sens, seul le **texte** revient. Un presse-papiers de téléphone tient
+très souvent une photo : l'app l'annonce alors (« une image, public.png, 1,2 Mo —
+non transférée ») plutôt que de rendre du vide qui se lirait « il n'y avait rien ».
+
+Rien ne part tout seul : **aucune synchronisation automatique**, dans aucun sens.
+Le contenu du presse-papiers n'est jamais écrit dans le journal, seulement le
+nombre de caractères.
+
+### Verrouiller, déverrouiller
+
+Un clic sur le bouton latéral dessiné **éteint l'écran** du téléphone. L'app
+affiche alors un bandeau « iPhone verrouillé — l'écran est éteint, le flux tourne
+au ralenti, rien n'est cassé » et **arrête de traiter ça comme une panne**. Un
+second clic (ou le bouton « Réveiller l'écran » du bandeau) rallume l'écran et
+**l'image revient d'elle-même en moins d'une seconde**.
+
+Le bandeau apparaît aussi quand c'est le **téléphone** qui se verrouille tout
+seul, ou ta main sur le vrai bouton : l'app le reconnaît au débit du flux, pas à
+ce qu'elle a commandé.
+
+Mesuré le 9 septembre 2026 : le flux ne meurt pas pendant le verrouillage, il
+tombe à deux paquets et une image entièrement noire par seconde. Rien n'est à
+remonter, aucun reset d'image n'est déclenché, et la session reste ouverte.
+
+**Ce que l'app ne peut pas faire :** déverrouiller. Réveiller l'écran est un
+appui de bouton et marche toujours ; ce qui est derrière est l'écran de
+verrouillage, et le franchir demande **Face ID** — donc ton visage devant le
+téléphone — ou **le code**. Il n'existe aucun moyen de contourner ça, et l'app
+n'essaie pas de faire croire le contraire.
+
+Si tu veux quand même déverrouiller depuis le PC, tu peux écrire ton code dans les
+réglages :
+
+```json
+"unlockCode": "123456"
+```
+
+L'app balaie alors l'écran de verrouillage vers le haut et tape le code au clavier
+virtuel. **Le compromis est écrit noir sur blanc :** ce fichier n'est pas chiffré,
+donc quiconque peut lire `%APPDATA%\LuminaMonitor\settings.json` peut lire le code
+de ton téléphone. Vide par défaut, et vide est le bon choix pour presque tout le
+monde. Le code n'apparaît jamais dans le journal — les lignes d'état ne comptent
+que le nombre de caractères.
+
+Les réglages (sens de la molette, couleur du châssis, position de la fenêtre,
+`unlockCode`) vivent dans `%APPDATA%\LuminaMonitor\settings.json`. À part
+`unlockCode` si tu le remplis, rien de secret n'y est écrit : l'appairage
+appartient à Apple, l'app se contente de le lire.
 
 ## Dépannage
 
@@ -119,6 +180,8 @@ issue (extrait uniquement, et **sans l'identifiant de l'appareil**).
 | **Le miroir refuse de repartir tout de suite** | Entre deux sessions, le téléphone refuse un nouveau flux **pendant une à deux minutes**, et chaque tentative refusée renouvelle le refus. L'app espace ses essais (5 s, doublés, plafond 30 s). Attends, n'insiste pas. |
 | **L'extraction refuse l'archive** | Le message dit lequel des trois cas : fichier inattendu, archive incomplète (retélécharger), ou paquet des ressources absent (ce n'est pas une archive Xcode 27). |
 | **Le toucher ne passe pas, les boutons oui** | C'est iOS 26 : `CoreDeviceError 9021`, « Remote control requires iOS 27.0 or later ». Il faut iOS 27. |
+| **« Service presse-papiers indisponible »** | Le service `pasteboardservice` n'a pas répondu. L'app est retombée sur la frappe caractère par caractère : le texte arrive quand même, plus lentement, et sans ce que le clavier US ne sait pas épeler. |
+| **Bandeau « iPhone verrouillé » qui reste** | L'écran est éteint — que ce soit l'app, ta main ou le verrouillage automatique du téléphone. Clique **Réveiller l'écran** ; s'il reste verrouillé après ça, c'est Face ID ou le code, sur le téléphone. |
 
 Pour un rapport de dix secondes plutôt qu'une capture d'écran :
 

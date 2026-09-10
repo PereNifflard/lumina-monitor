@@ -100,4 +100,26 @@ internal static class MfGuids
     public static Guid VideoFormatNv12 = new("3231564E-0000-0010-8000-00AA00389B71"); // 'NV12'
 
     public static Guid CodecApiLowLatency = new("9c27891a-ed7a-40e1-88e8-b22727a024ee");
+
+    // --- Audio: what Windows ships to decode AAC with ---------------------------
+    // CLSID_CMSAACDecMFT is the Microsoft AAC Decoder MFT, the only AAC decoder
+    // in the box. Its documented input subtype is MFAudioFormat_AAC, and the
+    // AudioSpecificConfig travels in MF_MT_USER_DATA behind a twelve-byte
+    // HEAACWAVEINFO tail.
+
+    public static Guid ClsidAacDecoder = new("32D186A7-218F-4C75-8876-DD77273A8999");
+
+    public static Guid MediaTypeAudio = new("73647561-0000-0010-8000-00AA00389B71");   // 'auds'
+    public static Guid AudioFormatAac = new("00001610-0000-0010-8000-00AA00389B71");   // WAVE_FORMAT_MPEG_HEAAC
+    public static Guid AudioFormatPcm = new("00000001-0000-0010-8000-00AA00389B71");   // WAVE_FORMAT_PCM
+
+    public static Guid AudioNumChannelsKey = new("37e48bf5-645e-4c5b-89de-ada9e29b696a");
+    public static Guid AudioSamplesPerSecondKey = new("5faeeae7-0290-4c31-9e8a-c534f68d9dba");
+    public static Guid AudioBitsPerSampleKey = new("f2deb57f-40fa-4764-aa33-ed4f2d1ff669");
+    public static Guid AudioBlockAlignmentKey = new("322de230-9eeb-43bd-ab7a-ff412251541d");
+    public static Guid AudioAvgBytesPerSecondKey = new("1aab75c8-cfef-451c-ab95-ac034b8e1731");
+    public static Guid UserDataKey = new("b6bc765f-4c3b-40a4-bd51-2535b66fe09d");
+    public static Guid AacPayloadTypeKey = new("bfbabe79-7434-4d1c-94f0-72a3b9e17188");
+    public static Guid PreferWaveFormatExKey = new("a901aaba-e037-458a-bdf6-545be2074042");
+    public static Guid AacProfileLevelKey = new("7632f0e6-9538-4d61-acda-ea29c8c14456");
 }

@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using LuminaMonitor.Core;
@@ -642,6 +643,10 @@ public partial class MainWindow : Window
             DecodeVideo = true,
         };
         session.StateChanged += state => Dispatcher.InvokeAsync(() => AdoptState(state));
+        // The banner itself is decided once a second in WatchDarkScreen, which
+        // also sees the phone locking itself; this only makes it immediate when
+        // the sleep came from here.
+        session.ScreenSleepChanged += _ => Dispatcher.InvokeAsync(DecideDarkScreen);
         session.UnlockRequired += message => Dispatcher.InvokeAsync(() => ShowUnlockBanner(message));
         session.RestartRequired += message => Dispatcher.InvokeAsync(() =>
         {
@@ -708,6 +713,9 @@ public partial class MainWindow : Window
         _touching = false;
         _pressPending = false;
         _heldKeys.Clear();
+        _screenDark = false;
+        _trickleSeconds = 0;
+        LockBanner.Visibility = Visibility.Collapsed;
         var session = _session;
         _session = null;
         _input = null;
@@ -742,6 +750,11 @@ public partial class MainWindow : Window
             _touching = false;
             _pressPending = false;
             _heldKeys.Clear();
+            // Whatever the screen is doing, this session can no longer say: the
+            // banner would go on claiming a lock nobody can undo from here.
+            _screenDark = false;
+            _trickleSeconds = 0;
+            LockBanner.Visibility = Visibility.Collapsed;
         }
 
         Report(state switch
@@ -1144,9 +1157,30 @@ public partial class MainWindow : Window
     /// minimised window draws nothing — which is precisely when a session that
     /// fell over has to be rebuilt without anyone watching.
     /// </remarks>
+    /// <summary>
+    /// The picture rate below which the phone's screen is taken to be dark.
+    /// </summary>
+    /// <remarks>
+    /// Measured on 9 September 2026 with the probe's <c>chassis-test</c>: a lit
+    /// screen, even a perfectly still one, sends forty to sixty pictures a
+    /// second, and one whose screen has gone out sends <b>one</b> — two RTP
+    /// packets a second of an entirely black picture. Three is well inside that
+    /// gap, and a stream that has really died sends none at all, which is how
+    /// the two are told apart.
+    /// </remarks>
+    private const int DarkFramesPerSecond = 3;
+
+    /// <summary>Consecutive seconds of that trickle before the banner goes up.</summary>
+    private const int DarkSeconds = 4;
+
+    private long _upkeepFrames;
+    private int _trickleSeconds;
+    private bool _screenDark;
+
     private void OnUpkeep(object? sender, EventArgs e)
     {
         EnsureSession();
+        WatchDarkScreen();
         WatchStream();
         UpdateState();
         WriteStatsLine();
@@ -1158,6 +1192,65 @@ public partial class MainWindow : Window
         if (_pressPending &&
             _sendClock.Elapsed.TotalMilliseconds - _pressStartMs > TapDeferMs)
             FlushPendingPress();
+    }
+
+    /// <summary>
+    /// Whether the phone's screen is dark, whoever turned it out.
+    /// </summary>
+    /// <remarks>
+    /// Two sources, and the second one is why this exists at all. The session
+    /// knows when the sleep came from this window; it knows nothing about the
+    /// phone locking itself two minutes after the last touch, which is the
+    /// ordinary case and the one that used to put "Flux arrêté" in the status
+    /// bar as if something had broken. The pictures still arrive when the screen
+    /// is out — see <see cref="DarkFramesPerSecond"/> — so the rate says what
+    /// the session cannot.
+    /// </remarks>
+    private void WatchDarkScreen()
+    {
+        long frames = Interlocked.Read(ref _framesReceived);
+        long arrived = frames - _upkeepFrames;
+        _upkeepFrames = frames;
+        _trickleSeconds = arrived is > 0 and <= DarkFramesPerSecond ? _trickleSeconds + 1 : 0;
+        DecideDarkScreen();
+    }
+
+    /// <summary>
+    /// The same decision without the counter, for the moment the session says
+    /// the screen was put out from here.
+    /// </summary>
+    /// <remarks>
+    /// Separate precisely so that it can be called off the beat: folding a
+    /// fraction of a second into the once-a-second window would make the rate it
+    /// measures a fiction, and the rate is the whole instrument.
+    /// </remarks>
+    private void DecideDarkScreen()
+    {
+        bool dark = _input is not null &&
+            (_session is { ScreenAsleep: true } || _trickleSeconds >= DarkSeconds);
+        if (dark == _screenDark)
+            return;
+
+        _screenDark = dark;
+        LockBannerText.Text = _settings.UnlockCode.Length > 0
+            ? "L'écran est éteint : le flux vidéo tourne au ralenti, rien n'est cassé. Le réveil balaie et tape ton code."
+            : "L'écran est éteint : le flux vidéo tourne au ralenti, rien n'est cassé. Le réveil rallume l'écran ; le déverrouillage reste Face ID ou ton code, sur le téléphone.";
+        LockBanner.Visibility = dark ? Visibility.Visible : Visibility.Collapsed;
+
+        if (dark)
+        {
+            // The banner sits where the pointer would be aiming, and a finger on
+            // a sleeping screen does nothing anyway.
+            Disengage();
+            Report("iPhone verrouillé — l'image reprend au réveil.");
+        }
+        else if (_input is not null)
+        {
+            // Only when there is still a session: a banner that goes down
+            // because the session died is not a screen coming back on.
+            Report("Écran rallumé.");
+        }
+        UpdateState();
     }
 
     /// <summary>Is a picture actually arriving right now?</summary>
@@ -1408,6 +1501,10 @@ public partial class MainWindow : Window
 
         (string key, string label) = (video, driving) switch
         {
+            // First of all: a dark screen still sends a picture a second, so
+            // every arm below would call it healthy and show a green "2 i/s"
+            // beside a banner saying the phone is locked.
+            _ when _screenDark => ("Warn", "verrouillé"),
             (true, true) => ("SuccessPulse", _engaged ? $"pilotage · {_presentedFps:0} i/s" : $"{_presentedFps:0} i/s"),
             (true, false) => ("Warn", "sans clavier"),
             (false, true) => ("Warn", _hadStream ? "flux arrêté" : "en attente"),
@@ -1431,6 +1528,13 @@ public partial class MainWindow : Window
             _dimmed = false;
 
         if (!_hadStream)
+            return;
+
+        // A stream that slowed to a trickle because the screen went out is not
+        // news: the lock banner already says what happened, and calling it "flux
+        // arrêté" on top of that is how a normal thing came to look like a
+        // fault.
+        if (!mirroring && _screenDark)
             return;
 
         Report(mirroring ? "Flux repris." : $"Flux arrêté à {DateTime.Now:HH:mm:ss}. F3 pour les compteurs.");
@@ -2037,21 +2141,30 @@ public partial class MainWindow : Window
 
     // --- Chassis buttons ---------------------------------------------------------
 
-    /// <summary>A drawn side button pressed with the mouse.</summary>
+    /// <summary>How long a pressed control stays lit under the pointer.</summary>
+    private static readonly Duration ButtonFlash = new(TimeSpan.FromMilliseconds(280));
+
+    /// <summary>
+    /// A drawn side control pressed with the mouse.
+    /// </summary>
+    /// <remarks>
+    /// The event is marked handled first thing, and the twin rectangles live
+    /// outside the screen's border: a press on the metal is never a finger on
+    /// the glass, whichever of the two mouse events WPF delivers first.
+    ///
+    /// <para>The side button is the one with two meanings, and it has them
+    /// because the phone does: the same physical press puts a lit screen to sleep
+    /// and wakes a dark one. So does this one — which also means the window has
+    /// to know which of the two the phone is in, and it only knows when the sleep
+    /// came from here. See <see cref="DeviceSession.ScreenAsleep"/>.</para>
+    /// </remarks>
     private void OnChassisButtonDown(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
-        string? name = sender is FrameworkElement element ? element.Name switch
-        {
-            "HitVolUp" => "volume-up",
-            "HitVolDn" => "volume-down",
-            "HitSide" => "lock",
-            "HitAction" => "mute",
-            _ => null,
-        } : null;
-
-        if (name is null)
+        if (sender is not Rectangle target)
             return;
+
+        Flash(target);
 
         if (_input is null)
         {
@@ -2059,8 +2172,150 @@ public partial class MainWindow : Window
             return;
         }
 
-        Report($"Bouton {name}.");
-        Post(name, input => input.PressButtonAsync(name));
+        switch (target.Name)
+        {
+            case "HitVolUp": Press("volume-up", "Volume +"); break;
+            case "HitVolDn": Press("volume-down", "Volume −"); break;
+            // The rectangle is drawn where the Action button is, and what it
+            // sends is the media Mute key: measured on 9 September, that is the
+            // only one of the two the protocol reaches. See its tooltip.
+            case "HitAction": Press("mute", "Muet"); break;
+            case "HitSide": _ = SideButtonAsync(); break;
+        }
+
+        void Press(string button, string label)
+        {
+            Report(label + ".");
+            Post(button, input => input.PressButtonAsync(button));
+        }
+    }
+
+    /// <summary>
+    /// Lights a control for a quarter of a second.
+    /// </summary>
+    /// <remarks>
+    /// The lamella drawn beside it is a fraction of a millimetre wide, so the
+    /// thing that lights up is the invisible twin that carries the click —
+    /// exactly the shape the hand was aiming at. A fresh brush per press,
+    /// because an animation on a frozen one throws, and the rectangle keeps a
+    /// fully transparent brush afterwards rather than a null one: a null Fill
+    /// would stop taking clicks.
+    /// </remarks>
+    private static void Flash(Shape target)
+    {
+        var glow = new SolidColorBrush(Color.FromArgb(0x59, 0xFF, 0xFF, 0xFF));
+        target.Fill = glow;
+        glow.BeginAnimation(SolidColorBrush.ColorProperty,
+            new ColorAnimation(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF), ButtonFlash)
+            {
+                FillBehavior = FillBehavior.HoldEnd,
+            });
+    }
+
+    private async void OnWakeClicked(object sender, RoutedEventArgs e)
+    {
+        if (_session is { } session && _input is not null)
+            await WakeNowAsync(session);
+    }
+
+    /// <summary>
+    /// A press that landed on the lock banner and nowhere else.
+    /// </summary>
+    /// <remarks>
+    /// The banner sits inside the screen's border, so without this the click that
+    /// asks for the screen to be woken would also be read as the click that takes
+    /// over the mouse — and the pointer would vanish over the very button the
+    /// hand is aiming at.
+    /// </remarks>
+    private void OnBannerDown(object sender, MouseButtonEventArgs e) => e.Handled = true;
+
+    /// <summary>The side button, both ways round.</summary>
+    private async Task SideButtonAsync()
+    {
+        if (_session is not { } session || _input is null)
+        {
+            Report("Pas de session : le bouton latéral n'a nulle part où aller.");
+            return;
+        }
+
+        try
+        {
+            // What the screen is doing, not what this session did to it: the
+            // phone locks itself far more often than anybody clicks this.
+            if (_screenDark)
+            {
+                await WakeNowAsync(session);
+            }
+            else
+            {
+                Report("Verrouillage de l'iPhone…");
+                await session.SleepScreenAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            Fault($"bouton latéral : {exception.Message}");
+        }
+    }
+
+    /// <summary>Lights the screen, and gets past the lock screen if it can.</summary>
+    private async Task WakeNowAsync(DeviceSession session)
+    {
+        try
+        {
+            Report("Réveil de l'écran…");
+            await session.WakeScreenAsync();
+            await UnlockAsync();
+        }
+        catch (Exception exception)
+        {
+            Fault($"réveil : {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Types the passcode on the lock screen, when there is one to type.
+    /// </summary>
+    /// <remarks>
+    /// The honest limit of this whole feature. Waking the screen is a button
+    /// press and always works; what is behind it is Face ID, which needs a face
+    /// in front of the phone, or the keypad, which needs the digits. This types
+    /// the digits when <see cref="Settings.UnlockCode"/> holds them and says so
+    /// plainly when it does not — it never pretends to have unlocked anything.
+    ///
+    /// <para>The swipe first: the keypad does not exist until the lock screen has
+    /// been pushed up, and iOS wants a real drag for that. A single report from
+    /// the bottom to the middle reads as a teleport and moves nothing.</para>
+    /// </remarks>
+    private async Task UnlockAsync()
+    {
+        var input = _input;
+        if (input is null)
+            return;
+
+        string code = _settings.UnlockCode;
+        if (code.Length == 0)
+        {
+            Report("Écran allumé — le déverrouillage demande ton visage, ou ton code sur le téléphone.");
+            return;
+        }
+
+        // The count, never the digits: this line goes to the journal like every
+        // other one.
+        Report($"Déverrouillage : balayage puis {code.Length} caractère(s) de code…");
+        await input.DragAsync(0.5, 0.94, 0.5, 0.40, 280);
+        await Task.Delay(900);
+        await input.TypeAsync(code);
+
+        // A four- or six-digit passcode is submitted by iOS the moment the last
+        // digit lands; anything else — a longer or alphanumeric code — waits for
+        // a return, and sending one to an already unlocked home screen does
+        // nothing.
+        bool selfSubmitting = code.Length is 4 or 6 && code.All(char.IsAsciiDigit);
+        if (!selfSubmitting)
+            await input.TypeAsync("\n");
+        await Task.Delay(400);
+        Report("Code envoyé. Si l'écran reste verrouillé, c'est le code ou Face ID qu'il faut.");
     }
 
     private void OnHomeClicked(object sender, RoutedEventArgs e)
@@ -2082,7 +2337,9 @@ public partial class MainWindow : Window
     /// </summary>
     private void Engage()
     {
-        if (_engaged || _surface is null || !Drivable)
+        // Not over a dark screen: the pointer would vanish over the banner the
+        // hand is reaching for, and a finger on a sleeping screen does nothing.
+        if (_engaged || _surface is null || !Drivable || _screenDark)
             return;
 
         _engaged = true;
@@ -2451,7 +2708,18 @@ public partial class MainWindow : Window
         // — it wants Command+V — and would never reach this handler.
         if (key == Key.F2)
         {
-            _ = PasteAsync();
+            _ = SendClipboardAsync();
+            e.Handled = true;
+            return;
+        }
+
+        // F4 the other way. Alt+F4 is left alone deliberately: Windows delivers
+        // it as Key.System with F4 underneath, so without this test the one
+        // shortcut everybody knows for closing a window would fetch a clipboard
+        // instead.
+        if (key == Key.F4 && !Keyboard.IsKeyDown(Key.LeftAlt) && !Keyboard.IsKeyDown(Key.RightAlt))
+        {
+            _ = FetchClipboardAsync();
             e.Handled = true;
             return;
         }
@@ -2534,21 +2802,29 @@ public partial class MainWindow : Window
 
     private bool _pasting;
     private bool _cancelPaste;
+    private bool _fetching;
 
-    private async void OnPasteClicked(object sender, RoutedEventArgs e) => await PasteAsync();
+    private async void OnPasteClicked(object sender, RoutedEventArgs e) => await SendClipboardAsync();
+
+    private async void OnFetchClicked(object sender, RoutedEventArgs e) => await FetchClipboardAsync();
 
     /// <summary>
-    /// Replays the Windows clipboard as keystrokes on the phone.
+    /// Windows clipboard to the phone's own, in one call.
     /// </summary>
     /// <remarks>
-    /// The only way to get text onto the phone from here, and it works because
-    /// the phone believes a keyboard is attached. There is no clipboard to share
-    /// and nothing to install: the text is typed, one key at a time, exactly as a
-    /// person would — which means it obeys the same rule as every other
-    /// keystroke, since what travels is the position of a key rather than the
-    /// character on it.
+    /// The phone has a clipboard and it can be written from here, which is worth
+    /// far more than the typing this used to do: the text arrives whole and
+    /// instantly, accents and emoji included, and lands where a paste from any
+    /// other Apple device would. What the person then does with it — a long
+    /// press, Command+V — is theirs.
+    ///
+    /// <para>The typing is kept as the fallback and nothing more. It is the only
+    /// thing that still works when the pasteboard daemon refuses (an older iOS,
+    /// a service missing from the directory), and when it is what happened the
+    /// status bar says so rather than letting a slow, lossy paste pass for the
+    /// fast one.</para>
     /// </remarks>
-    private async Task PasteAsync()
+    private async Task SendClipboardAsync()
     {
         if (_pasting)
         {
@@ -2556,8 +2832,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var input = _input;
-        if (input is null)
+        if (_input is null)
         {
             Report("Pas de session — rien à coller.");
             return;
@@ -2578,6 +2853,113 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(text))
         {
             Report("Presse-papiers vide.");
+            return;
+        }
+
+        if (_session is { } session)
+        {
+            try
+            {
+                Report($"Envoi de {text.Length} caractère(s) au presse-papiers de l'iPhone…");
+                await session.WritePhoneClipboardAsync(text);
+                Report($"{text.Length} caractère(s) dans le presse-papiers de l'iPhone  ·  ⌘V ou appui long pour coller.");
+                return;
+            }
+            catch (Exception exception)
+            {
+                // Never the text itself, here or anywhere else that writes a line.
+                Report($"Service presse-papiers indisponible ({exception.Message}) — collage par frappe.");
+            }
+        }
+
+        await TypeClipboardAsync(text);
+    }
+
+    /// <summary>
+    /// Brings the phone's clipboard back to Windows.
+    /// </summary>
+    /// <remarks>
+    /// Text only, and that is a statement rather than an omission: a phone's
+    /// clipboard very often holds a photo, and the honest answer to that is to
+    /// name it and its size instead of handing back an empty string that would
+    /// read as "there was nothing".
+    /// </remarks>
+    private async Task FetchClipboardAsync()
+    {
+        if (_fetching)
+            return;
+
+        if (_session is not { } session || _input is null)
+        {
+            Report("Pas de session — le presse-papiers du téléphone est hors de portée.");
+            return;
+        }
+
+        _fetching = true;
+        try
+        {
+            Report("Lecture du presse-papiers de l'iPhone…");
+            var content = await session.ReadPhoneClipboardSnapshotAsync();
+            switch (content.Kind)
+            {
+                case ClipboardKind.Text when content.Text is { Length: > 0 } text:
+                    try
+                    {
+                        Clipboard.SetText(text);
+                        Report($"{text.Length} caractère(s) copié(s) depuis l'iPhone.");
+                    }
+                    catch (Exception)
+                    {
+                        Report("Presse-papiers Windows verrouillé par une autre application — rien copié.");
+                    }
+                    break;
+
+                case ClipboardKind.Image:
+                    Report($"Le presse-papiers de l'iPhone contient une image ({content.Type}, {Weigh(content.Bytes)}) — non transférée.");
+                    break;
+
+                case ClipboardKind.Data:
+                    Report($"Le presse-papiers de l'iPhone contient des données ({content.Type}, {Weigh(content.Bytes)}) — non transférées.");
+                    break;
+
+                default:
+                    Report("Presse-papiers de l'iPhone vide.");
+                    break;
+            }
+        }
+        catch (Exception exception)
+        {
+            Fault($"Presse-papiers de l'iPhone illisible : {exception.Message}");
+        }
+        finally
+        {
+            _fetching = false;
+        }
+    }
+
+    /// <summary>A byte count as a person reads it.</summary>
+    private static string Weigh(int bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} octets",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} Ko",
+        _ => $"{bytes / (1024.0 * 1024.0):0.#} Mo",
+    };
+
+    /// <summary>
+    /// Replays a text as keystrokes on the phone: the fallback, kept whole.
+    /// </summary>
+    /// <remarks>
+    /// It works because the phone believes a keyboard is attached, and it obeys
+    /// the same rule as every other keystroke — what travels is the position of
+    /// a key rather than the character on it, so anything the US layout cannot
+    /// spell is skipped and counted.
+    /// </remarks>
+    private async Task TypeClipboardAsync(string text)
+    {
+        var input = _input;
+        if (input is null)
+        {
+            Report("Pas de session — rien à coller.");
             return;
         }
 
@@ -2649,7 +3031,7 @@ public partial class MainWindow : Window
             try { await input.KeyboardReportAsync(Array.Empty<int>()); }
             catch (Exception) { /* the session is gone; so is the held key */ }
             _pasting = false;
-            PasteLabel.Text = "Coller";
+            PasteLabel.Text = "Vers l'iPhone";
         }
     }
 

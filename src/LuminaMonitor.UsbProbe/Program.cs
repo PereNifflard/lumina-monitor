@@ -24,12 +24,21 @@ using LuminaMonitor.Core.Usb;
 //   LuminaMonitor.UsbProbe clock-test [sec] [--variant=…] [--out=<dossier>]
 //                                          absolute delay: every second turning over on the
 //                                          phone, written out with the PC time it arrived
+//   LuminaMonitor.UsbProbe audio-info [sec] [capture.rtp] [--variant=…] [--video]
+//                                          the phone's sound: the whole negotiation, what the
+//                                          RTP carries, and a raw capture
+//   LuminaMonitor.UsbProbe aac-selftest    does Windows decode the phone's AAC-ELD? Offline
 //   LuminaMonitor.UsbProbe sps-selftest    the SPS rewriter: read back, and a second pass
 //   LuminaMonitor.UsbProbe watchdog-selftest  the stream watch's ladder, offline
 //   LuminaMonitor.UsbProbe tcp-selftest    the tunnel's TCP against a paper phone, offline
 //   LuminaMonitor.UsbProbe flood [sec]     load the input path and ping through it
 //   LuminaMonitor.UsbProbe mouse-flood <sec> [hz] [hold|hover]
 //                                          synthetic mouse storm aimed at the app window
+//   LuminaMonitor.UsbProbe chassis-test [--out=<dossier>]
+//                                          the four chassis controls on the real phone,
+//                                          and what locking the screen does to the session
+//   LuminaMonitor.UsbProbe clipboard [texte]
+//                                          the phone's pasteboard: read it, or write it
 //   LuminaMonitor.UsbProbe pair <udid>     read the stored pairing record
 //   LuminaMonitor.UsbProbe buid            the multiplexer's host identifier
 //
@@ -352,6 +361,15 @@ if (command == "mf-selftest")
             return 8;
         }
     });
+}
+
+if (command == "aac-selftest")
+{
+    // aac-selftest : le decodeur AAC de Windows contre l'AudioSpecificConfig du
+    // telephone (F8 E6 40 00, objet 39 = ER AAC ELD) puis contre un AAC-LC
+    // ordinaire. Deux HRESULT, et la question « Windows peut-il decoder ce que
+    // le telephone envoie » est tranchee sans telephone.
+    return AudioTools.AacSelfTest(Say);
 }
 
 if (command == "sps-selftest")
@@ -958,6 +976,74 @@ using (mux)
             break;
         }
 
+        case "media-status":
+        {
+            // media-status : ce que le serveur media du telephone croit encore
+            // en cours. Une session qui y traine apres une sonde tuee est ce qui
+            // rend le micro du telephone indisponible a ses autres apps.
+            int watch = args.Length > 1 && int.TryParse(args[1], out int parsedWatch) ? Math.Clamp(parsedWatch, 0, 600) : 0;
+            int statusCode = await AudioTools.MediaStatusAsync(DefaultDdiFolder, Say, watch);
+            if (statusCode != 0) return statusCode;
+            break;
+        }
+
+        case "media-release":
+        {
+            // media-release : ferme toutes les sessions media que le telephone
+            // croit encore en cours. Le remede au micro reste reserve.
+            int releaseCode = await AudioTools.MediaReleaseAsync(DefaultDdiFolder, Say);
+            if (releaseCode != 0) return releaseCode;
+            break;
+        }
+
+        case "audio-leak-test":
+        {
+            // audio-leak-test : ouvre un flux audio et NE LE FERME PAS, puis
+            // rend la main. A lancer et tuer pour reproduire exactement ce qui
+            // arrive quand la sonde ou l'app est tuee : c'est le seul moyen
+            // d'observer la session fantome sans casser la session du fondateur.
+            int leakCode = await AudioTools.LeakAsync(DefaultDdiFolder, Say);
+            if (leakCode != 0) return leakCode;
+            break;
+        }
+
+        case "audio-info":
+        {
+            // audio-info [secondes] [capture.rtp] [--variant=…] [--video]
+            // [--direction=…] — le son du telephone : la negociation entiere, ce
+            // que le RTP transporte, et une capture brute au meme format que la
+            // video. Avec --video, l'audio partage l'identifiant de session du
+            // flux video, comme le miroir de Xcode.
+            int audioSeconds = 10;
+            string? audioCapture = null;
+            string audioVariant = "default";
+            bool audioWithVideo = false;
+            string audioDirection = "output";
+            foreach (string argument in args[1..])
+            {
+                if (argument.StartsWith("--variant=", StringComparison.OrdinalIgnoreCase))
+                    audioVariant = argument[10..];
+                else if (argument.StartsWith("--direction=", StringComparison.OrdinalIgnoreCase))
+                    audioDirection = argument[12..];
+                else if (argument.Equals("--video", StringComparison.OrdinalIgnoreCase))
+                    audioWithVideo = true;
+                else if (int.TryParse(argument, out int parsed))
+                    audioSeconds = parsed;
+                else
+                    audioCapture = argument;
+            }
+            if (audioSeconds is < 1 or > 300)
+            {
+                Say($"usage : audio-info [1..300] [capture.rtp] [--variant=<variante>] [--video] [--direction=<output|input>]"
+                    + $"{Environment.NewLine}{AudioTools.VariantUsage}");
+                return 2;
+            }
+            int audioCode = await AudioTools.RunAsync(audioSeconds, audioCapture, audioVariant, audioWithVideo,
+                audioDirection, DefaultDdiFolder, Say);
+            if (audioCode != 0) return audioCode;
+            break;
+        }
+
         case "mirror-test":
         {
             // mirror-test [secondes] [sortie.bmp] [--suite=<dossier>] — la
@@ -1100,6 +1186,61 @@ using (mux)
             // The daemon dispatches asynchronously: closing at once can lose the last event.
             await Task.Delay(500);
             Say($"*** {names.Length} BOUTON(S) ENVOYE(S) *** (messages abandonnes : {session.Input.DroppedMessages})");
+            break;
+        }
+
+        case "chassis-test":
+        {
+            // chassis-test [--out=<dossier>] — les quatre commandes dessinees
+            // sur le chassis de la fenetre, pressees sur le vrai telephone, et
+            // ce que le verrouillage fait a la session : debits paquet par
+            // seconde et images decodees ecrites sur le disque, luminance
+            // moyenne a cote, parce qu'un ecran eteint et un flux arrete se
+            // ressemblent dans un journal et jamais dans une image.
+            string chassisFolder = "chassis";
+            int longLock = 9;
+            foreach (string argument in args[1..])
+            {
+                if (argument.StartsWith("--out=", StringComparison.OrdinalIgnoreCase))
+                    chassisFolder = argument[6..];
+                else if (argument.StartsWith("--lock=", StringComparison.OrdinalIgnoreCase)
+                    && int.TryParse(argument[7..], out int parsed))
+                    longLock = Math.Clamp(parsed, 0, 120);
+                else { Say("usage : chassis-test [--out=<dossier>] [--lock=<secondes>]"); return 2; }
+            }
+            await ChassisTools.ChassisTestAsync(DefaultDdiFolder, Say, chassisFolder, longLock);
+            break;
+        }
+
+        case "clipboard":
+        {
+            // clipboard [texte] — sans argument, ce que le presse-papiers du
+            // telephone contient ; avec un argument, il l'y ecrit puis le
+            // relit, parce qu'un envoi sans relecture ne prouve rien.
+            string? written = args.Length > 1 ? string.Join(' ', args[1..]) : null;
+
+            await using var session = new DeviceSession(new DdiSource(DefaultDdiFolder), new ConsoleLog());
+            session.UnlockRequired += message => Say(message);
+            await session.ConnectAsync();
+
+            if (written is not null)
+            {
+                await session.WritePhoneClipboardAsync(written);
+                Say($"*** ECRIT *** {written.Length} caractere(s) dans le presse-papiers du telephone.");
+            }
+            var content = await session.ReadPhoneClipboardSnapshotAsync();
+            Say(content.Kind switch
+            {
+                ClipboardKind.Text => $"Presse-papiers du telephone : {content.Text!.Length} caractere(s),"
+                    + $" {content.Bytes} octet(s) UTF-8.",
+                ClipboardKind.Image => $"Presse-papiers du telephone : une image ({content.Type}, {content.Bytes} octets).",
+                ClipboardKind.Data => $"Presse-papiers du telephone : des donnees ({content.Type}, {content.Bytes} octets).",
+                _ => "Presse-papiers du telephone : vide.",
+            });
+            if (content.Kind == ClipboardKind.Text)
+                Console.WriteLine(content.Text);
+            if (written is not null && content.Text != written)
+                Say("*** RELECTURE DIFFERENTE DE L'ECRITURE ***");
             break;
         }
 
@@ -1671,7 +1812,10 @@ internal sealed class RtpTap : IDisposable
             say(_byPayloadType.Count == 0 ? "  aucun payload type vu." : "  payload types vus :");
             foreach (var (type, stat) in _byPayloadType.OrderByDescending(x => x.Value.Packets))
             {
-                string codec = type switch { 123 => "AVC", 100 => "HEVC", >= 200 and <= 206 => "RTCP", _ => "?" };
+                string codec = type switch
+                {
+                    123 => "AVC", 100 => "HEVC", 101 => "AAC-ELD", >= 200 and <= 206 => "RTCP", _ => "?",
+                };
                 say($"    PT {type,3} ({codec,-6}) : {stat.Packets} paquet(s), {stat.Bytes:N0} octets, {stat.Markers} marqueur(s)");
                 say($"      premiere charge utile : {stat.FirstPayloadSize} octets, {FirstBytesShown} premiers = {stat.FirstPayloadHex}");
             }

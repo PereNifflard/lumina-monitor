@@ -165,6 +165,120 @@ public sealed class DeviceSession : IAsyncDisposable
         }
     }
 
+    // --- The screen going to sleep -------------------------------------------------
+
+    /// <summary>
+    /// Whether the screen was put to sleep from here.
+    /// </summary>
+    /// <remarks>
+    /// Known only when this session did it: a side button pressed by a hand on
+    /// the real phone tells us nothing, and pretending otherwise would be worse
+    /// than admitting it. What it buys is the difference between "the pictures
+    /// stopped because there is nothing to photograph" and "the mirror broke",
+    /// which are indistinguishable from the packet counter alone and call for
+    /// opposite answers.
+    /// </remarks>
+    public bool ScreenAsleep { get; private set; }
+
+    /// <summary>The screen was put to sleep, or woken, from here.</summary>
+    public event Action<bool>? ScreenSleepChanged;
+
+    /// <summary>Rungs of the stall ladder ignored because the screen was off.</summary>
+    private int _stallsWhileAsleep;
+
+    /// <summary>Puts the screen to sleep: the side button, held half a second.</summary>
+    public async Task SleepScreenAsync()
+    {
+        await Input.PressButtonAsync("lock");
+        if (ScreenAsleep)
+            return;
+        ScreenAsleep = true;
+        _stallsWhileAsleep = 0;
+        Info("Ecran endormi depuis le PC : la veille du flux est suspendue.");
+        ScreenSleepChanged?.Invoke(true);
+    }
+
+    /// <summary>
+    /// Lights the screen again — with the home usage, not the power one.
+    /// </summary>
+    /// <remarks>
+    /// Measured on 9 September 2026, because the obvious answer is wrong. The
+    /// power usage that put the screen out does not bring it back: tapped for
+    /// 40 ms, and held again for 500 ms, the decoded frame stayed at luminance
+    /// 0.0/255. Consumer/Menu — the home button — lights it in under a second,
+    /// packets straight back from 2/s to 66/s.
+    ///
+    /// <para>Waking and unlocking are two different things and only the first
+    /// one is ours. What comes up is the lock screen, padlock closed; getting
+    /// past it is Face ID's business or the passcode's, neither of which this
+    /// project can supply. The caller that holds a passcode does the rest
+    /// itself.</para>
+    /// </remarks>
+    public async Task WakeScreenAsync()
+    {
+        await Input.PressButtonAsync("home");
+        if (!ScreenAsleep)
+            return;
+        ScreenAsleep = false;
+        if (_stallsWhileAsleep > 0)
+        {
+            // The ignored rungs left the watch part way up the ladder with an
+            // outcome owed. Nothing else ever reports that outcome, so the watch
+            // is put back to the bottom rather than left deaf for the rest of
+            // the session.
+            _media?.RearmWatch();
+            Info($"Ecran reveille : veille du flux rearmee ({_stallsWhileAsleep} alerte(s) ignoree(s) pendant le sommeil).");
+        }
+        _stallsWhileAsleep = 0;
+        ScreenSleepChanged?.Invoke(false);
+    }
+
+    // --- The phone's pasteboard ---------------------------------------------------
+
+    /// <summary>
+    /// Reads the phone's clipboard, and says what it holds when it is not text.
+    /// </summary>
+    /// <remarks>
+    /// The service is opened for the call and hung up on afterwards, which is
+    /// deliberate: a clipboard is used a few times an hour, and a channel held
+    /// open for it would be one more thing to rebuild after every stall for no
+    /// gain at all. The connection itself is one TCP opening through a tunnel
+    /// that is already up — a few milliseconds.
+    /// </remarks>
+    public async Task<ClipboardContent> ReadPhoneClipboardSnapshotAsync()
+    {
+        var service = await OpenPasteboardAsync();
+        try { return await PasteboardService.GetAsync(service); }
+        finally { await HangUpAsync(service); }
+    }
+
+    /// <summary>The phone's clipboard as text, or null when it holds something else.</summary>
+    public async Task<string?> ReadPhoneClipboardAsync() =>
+        (await ReadPhoneClipboardSnapshotAsync()).Text;
+
+    /// <summary>Puts <paramref name="text"/> on the phone's clipboard, replacing what was there.</summary>
+    public async Task WritePhoneClipboardAsync(string text)
+    {
+        var service = await OpenPasteboardAsync();
+        try { await PasteboardService.SetTextAsync(service, text); }
+        finally { await HangUpAsync(service); }
+    }
+
+    private async Task<XpcService> OpenPasteboardAsync()
+    {
+        var rsd = _rsd ?? throw new LuminaException("Session non connectee : le presse-papiers passe par le tunnel.");
+        if (!rsd.Services.ContainsKey(PasteboardService.ServiceName))
+            throw new LuminaException("Service presse-papiers absent de l'annuaire du telephone.");
+        return await rsd.OpenAsync(PasteboardService.ServiceName);
+    }
+
+    /// <summary>The same courtesy as every other channel: the daemon closes first if it wants to.</summary>
+    private static async Task HangUpAsync(XpcService service)
+    {
+        try { await service.CloseAsync(TimeSpan.FromSeconds(1)); }
+        catch (Exception) { /* the answer is already in hand */ }
+    }
+
     /// <summary>
     /// Climbs the ladder, and cycles the developer image rather than failing
     /// when the display service turns out to be deaf twice in a row.
@@ -354,6 +468,19 @@ public sealed class DeviceSession : IAsyncDisposable
     {
         if (!ReferenceEquals(media, _media))
             return;                                     // a watch left over from a session already replaced
+
+        // A screen that was put to sleep from here has nothing to send, and
+        // every rung of the ladder would make it worse: a key frame request goes
+        // to an encoder with nothing to encode, a stream restart spends the
+        // display service's patience, and a soft reset needs the very unlock
+        // that has not happened. So the alarm is noted once and ignored until
+        // the screen lights up again, where the watch is rearmed.
+        if (ScreenAsleep && action is not StallAction.Recovered)
+        {
+            if (_stallsWhileAsleep++ == 0)
+                Info("Flux silencieux, ecran endormi : rien a reparer avant le reveil.");
+            return;
+        }
 
         switch (action)
         {

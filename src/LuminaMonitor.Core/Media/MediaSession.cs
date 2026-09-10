@@ -135,6 +135,17 @@ internal sealed class MediaSession
     /// <summary>The daemon's answer to <c>startmediastream</c>, untouched.</summary>
     public Dictionary<string, object?>? StreamConfig { get; private set; }
 
+    /// <summary>
+    /// The client session id this stream was started under.
+    /// </summary>
+    /// <remarks>
+    /// Only meaningful once <see cref="StartAsync"/> has run, and only useful
+    /// to one caller: an <see cref="AudioSession"/> that wants to be grouped
+    /// with this video stream the way Xcode's mirror groups its own — one
+    /// <c>avcMediaStreamOptionClientSessionID</c> for both.
+    /// </remarks>
+    public XpcUuid SessionId => _sessionId;
+
     public MediaStats Stats
     {
         get
@@ -210,6 +221,15 @@ internal sealed class MediaSession
             _driftFrames = 0;
         }
 
+        // Before anything else: whatever the phone still believes is running.
+        // A session this host never closed — killed from a task manager, cable
+        // pulled — outlives the process, and the daemon can refuse the next
+        // offer over it ("a phone or VoIP call is in progress"). There is no
+        // cleanup on the way out that a kill cannot skip, so the guard is on
+        // the way in. See MediaHygiene.
+        if (await MediaHygiene.ReleaseOrphansAsync(_rsd, Say) > 0)
+            await Task.Delay(SettleMs);
+
         _display = await _rsd.OpenAsync(DisplayService.ServiceName, serviceTrace);
         _stopping = new CancellationTokenSource();
         _udpPort = _net.ListenUdp(OnDatagram);
@@ -257,6 +277,19 @@ internal sealed class MediaSession
         _lastKeyFrameRequestTicks = now;
         return _rtcp.RequestKeyFrameAsync();
     }
+
+    /// <summary>
+    /// Starts the stall ladder over from the beginning.
+    /// </summary>
+    /// <remarks>
+    /// For the one case where silence is expected and means nothing: the phone's
+    /// screen was put to sleep from here, so the pictures stopped because there
+    /// is nothing to photograph. The session ignores the ladder's rungs while
+    /// that lasts — see <c>DeviceSession.ScreenAsleep</c> — and an ignored rung
+    /// leaves the watch part way up it, waiting for an outcome nobody will
+    /// report. This is how it is put back on its feet when the screen lights up.
+    /// </remarks>
+    public void RearmWatch() => _watchdog?.Rearm(_watchClock.Elapsed.TotalSeconds);
 
     /// <summary>
     /// Starts watching the pace of the stream.

@@ -119,7 +119,11 @@
                      que les lamelles. -->
                 <Rectangle x:Name="HitAction" Fill="Transparent" Cursor="Hand"
                            HorizontalAlignment="Left" VerticalAlignment="Top"
-                           ToolTip="Silencieux" MouseLeftButtonDown="OnChassisButtonDown" />
+                           MouseLeftButtonDown="OnChassisButtonDown">
+                    <Rectangle.ToolTip>
+                        <ToolTip Content="Muet : coupe et rétablit le son du téléphone. Mesuré le 9 septembre : ce qui part est la touche Muet du clavier média, pas le bouton Action — celui-ci n'est pas atteignable par ce protocole." />
+                    </Rectangle.ToolTip>
+                </Rectangle>
                 <Rectangle x:Name="HitVolUp"  Fill="Transparent" Cursor="Hand"
                            HorizontalAlignment="Left" VerticalAlignment="Top"
                            ToolTip="Volume +" MouseLeftButtonDown="OnChassisButtonDown" />
@@ -128,7 +132,11 @@
                            ToolTip="Volume −" MouseLeftButtonDown="OnChassisButtonDown" />
                 <Rectangle x:Name="HitSide"   Fill="Transparent" Cursor="Hand"
                            HorizontalAlignment="Right" VerticalAlignment="Top"
-                           ToolTip="Veille" MouseLeftButtonDown="OnChassisButtonDown" />
+                           MouseLeftButtonDown="OnChassisButtonDown">
+                    <Rectangle.ToolTip>
+                        <ToolTip Content="Bouton latéral : éteint l'écran, et le rallume quand il est éteint. Le déverrouillage lui-même reste Face ID ou le code — l'app ne peut taper le code que si tu l'as écrit dans unlockCode." />
+                    </Rectangle.ToolTip>
+                </Rectangle>
 
                 <!-- 4. La bordure de verre noire. Vue de face, les 2,54 mm entre
                         le bord du boitier et le premier pixel ne sont pas tous du
@@ -236,6 +244,34 @@
                                         Visibility="Collapsed" />
                             </StackPanel>
                         </Border>
+
+                        <!-- L'écran du téléphone est éteint. Ce n'est pas une
+                             panne, et le dire vaut mieux que laisser le flux
+                             arrêté passer pour une : c'est exactement le moment
+                             où l'app avait l'air cassée. -->
+                        <Border x:Name="LockBanner" Background="#E6101B2E"
+                                CornerRadius="14" Padding="20,16"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                MaxWidth="360"
+                                BorderBrush="{StaticResource GlassBorder}" BorderThickness="1"
+                                Visibility="Collapsed"
+                                MouseLeftButtonDown="OnBannerDown">
+                            <StackPanel>
+                                <TextBlock Text="iPhone verrouillé"
+                                           FontFamily="{StaticResource DisplayFont}"
+                                           FontSize="17" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"
+                                           Foreground="{StaticResource OnSurface}" />
+                                <TextBlock x:Name="LockBannerText" TextWrapping="Wrap"
+                                           FontSize="12.5" LineHeight="19" Margin="0,10,0,0"
+                                           Foreground="{StaticResource OnSurfaceVariant}"
+                                           Text="L'écran est éteint : le flux vidéo est en pause, rien n'est cassé." />
+                                <Button x:Name="WakeButton" Content="Réveiller l'écran"
+                                        Margin="0,14,0,0" HorizontalAlignment="Center"
+                                        Style="{StaticResource BarButton}"
+                                        Click="OnWakeClicked" />
+                            </StackPanel>
+                        </Border>
                     </Grid>
                 </Border>
 
@@ -294,13 +330,27 @@
 
                 <Rectangle Width="1" Fill="{StaticResource GlassBorder}" Margin="5,8" />
 
+                <!-- Le presse-papiers, dans les deux sens. Deux boutons plutôt
+                     qu'un menu : le sens est ce qu'on choisit, et un menu le
+                     cacherait derrière un clic de plus. -->
                 <Button x:Name="PasteButton" Style="{StaticResource BarButton}"
                         Click="OnPasteClicked"
-                        ToolTip="Tape le presse-papiers Windows sur le téléphone (F2).">
+                        ToolTip="Presse-papiers Windows → iPhone (F2). Écrit le presse-papiers du téléphone ; si le service refuse, le texte est tapé au clavier virtuel.">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE77F;" FontSize="14" VerticalAlignment="Center"
                                    FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
-                        <TextBlock x:Name="PasteLabel" Text="Coller" Margin="9,0,0,0"
+                        <TextBlock x:Name="PasteLabel" Text="Vers l'iPhone" Margin="9,0,0,0"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Button x:Name="FetchButton" Style="{StaticResource BarButton}"
+                        Click="OnFetchClicked"
+                        ToolTip="Presse-papiers iPhone → Windows (F4). Le texte est repris ; une image ou des données sont annoncées, pas transférées.">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE8C8;" FontSize="14" VerticalAlignment="Center"
+                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
+                        <TextBlock Text="Depuis l'iPhone" Margin="9,0,0,0"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>

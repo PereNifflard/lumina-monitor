@@ -1,4 +1,4 @@
-using System.IO.Compression;
+using static LuminaMonitor.Core.Media.OfferWire;
 
 namespace LuminaMonitor.Core.Media;
 
@@ -115,7 +115,6 @@ internal sealed record VideoOfferOptions
 /// </remarks>
 internal static class MediaOffer
 {
-    private const string DecoderName = "Viceroy 1.7.0";
     private const int NegotiatorModeVideo = 5;
     private const long ResEntryCodecCapId = 50115;
     private const string AvcFeatures = "FLS;SW:1;";
@@ -203,13 +202,7 @@ internal static class MediaOffer
         top.AddRange(FString(6, DecoderName));
         top.AddRange(FVarint(8, 0));
         foreach (var (kind, bps, cap) in Tiers(options.MaxBitrateKbps))
-        {
-            var tier = new List<byte>();
-            tier.AddRange(FVarint(1, kind));
-            tier.AddRange(FVarint(2, bps));
-            if (cap is long c) tier.AddRange(FVarint(3, c));
-            top.AddRange(FBytes(9, [.. tier]));
-        }
+            top.AddRange(Tier(kind, bps, cap));
         top.AddRange(Tag(13, 0)); top.AddRange(Varint(CapturedVideoTimestamp));
         top.AddRange(FVarint(14, 2));
         top.AddRange(FVarint(16, 0));
@@ -273,52 +266,4 @@ internal static class MediaOffer
         body.AddRange(FVarint(4, f4));
         return [.. body];
     }
-
-    private static byte[] EndpointInfo(string model, string osVersion, string build)
-    {
-        var b = new List<byte>();
-        b.AddRange(FVarint(1, 0));
-        b.AddRange(FVarint(2, 1));
-        b.AddRange(FString(3, model));
-        b.AddRange(FString(4, osVersion));
-        b.AddRange(FString(5, build));
-        return [.. b];
-    }
-
-    private static byte[] Deflate(byte[] data)
-    {
-        using var output = new MemoryStream();
-        using (var zlib = new ZLibStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
-            zlib.Write(data);
-        return output.ToArray();
-    }
-
-    private static byte[] Varint(ulong value)
-    {
-        var o = new List<byte>();
-        while (true)
-        {
-            byte b = (byte)(value & 0x7F);
-            value >>= 7;
-            if (value != 0) o.Add((byte)(b | 0x80));
-            else { o.Add(b); return [.. o]; }
-        }
-    }
-
-    /// <summary>A varint padded with redundant continuation bytes to a fixed width, as Apple's captures do.</summary>
-    private static byte[] VarintPadded(ulong value, int width)
-    {
-        var raw = new List<byte>(Varint(value & ((1UL << (7 * width)) - 1)));
-        while (raw.Count < width)
-        {
-            raw[^1] |= 0x80;
-            raw.Add(0x00);
-        }
-        return [.. raw];
-    }
-
-    private static byte[] Tag(int field, int wire) => Varint((ulong)((field << 3) | wire));
-    private static byte[] FVarint(int field, long value) => [.. Tag(field, 0), .. Varint((ulong)value)];
-    private static byte[] FBytes(int field, byte[] value) => [.. Tag(field, 2), .. Varint((ulong)value.Length), .. value];
-    private static byte[] FString(int field, string value) => FBytes(field, System.Text.Encoding.UTF8.GetBytes(value));
 }

@@ -31,15 +31,35 @@ internal interface IMFMediaType
     [PreserveSig] int GetUINT64(ref Guid key, out ulong value);
     [PreserveSig] int Unused06();
     [PreserveSig] int GetGUID(ref Guid key, out Guid value);
-    [PreserveSig] int Unused08(); [PreserveSig] int Unused09(); [PreserveSig] int Unused10(); [PreserveSig] int Unused11();
-    [PreserveSig] int Unused12(); [PreserveSig] int Unused13(); [PreserveSig] int Unused14(); [PreserveSig] int Unused15();
+    [PreserveSig] int Unused08(); [PreserveSig] int Unused09(); [PreserveSig] int Unused10();
+    /// <summary>Slot 11, <c>GetBlobSize</c>.</summary>
+    [PreserveSig] int GetBlobSize(ref Guid key, out uint size);
+    /// <summary>Slot 12, <c>GetBlob</c>: reads an AudioSpecificConfig back out of a type.</summary>
+    /// <remarks>
+    /// The buffer is an <see cref="IntPtr"/> and not a <c>byte[]</c> on
+    /// purpose: in COM interop an array parameter defaults to
+    /// <c>UnmanagedType.SafeArray</c>, so a declaration that looks right hands
+    /// the callee a SAFEARRAY header where it expects bytes — measured, and it
+    /// fails silently with S_OK and no data.
+    /// </remarks>
+    [PreserveSig] int GetBlob(ref Guid key, IntPtr buffer, uint bufferSize, out uint size);
+    [PreserveSig] int Unused13(); [PreserveSig] int Unused14(); [PreserveSig] int Unused15();
     [PreserveSig] int Unused16(); [PreserveSig] int Unused17();
     [PreserveSig] int SetUINT32(ref Guid key, uint value);
     [PreserveSig] int SetUINT64(ref Guid key, ulong value);
     [PreserveSig] int Unused20();
     [PreserveSig] int SetGUID(ref Guid key, ref Guid value);
-    [PreserveSig] int Unused22(); [PreserveSig] int Unused23(); [PreserveSig] int Unused24(); [PreserveSig] int Unused25();
-    [PreserveSig] int Unused26(); [PreserveSig] int Unused27(); [PreserveSig] int Unused28(); [PreserveSig] int Unused29();
+    [PreserveSig] int Unused22();
+    /// <summary>Slot 23, <c>IMFAttributes::SetBlob</c>: how an AudioSpecificConfig reaches a decoder.</summary>
+    /// <remarks>See <see cref="GetBlob"/> for why the buffer is an <see cref="IntPtr"/>.</remarks>
+    [PreserveSig] int SetBlob(ref Guid key, IntPtr value, uint size);
+    [PreserveSig] int Unused24(); [PreserveSig] int Unused25();
+    [PreserveSig] int Unused26();
+    /// <summary>Slot 27, <c>GetCount</c>: how many attributes this type carries.</summary>
+    [PreserveSig] int GetCount(out uint count);
+    /// <summary>Slot 28, <c>GetItemByIndex</c>. The value pointer may be null, which is how the keys are listed.</summary>
+    [PreserveSig] int GetItemByIndex(uint index, out Guid key, IntPtr value);
+    [PreserveSig] int Unused29();
 }
 
 [ComImport, Guid("045fa593-8799-42b8-bc8d-8968c6453507"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -106,7 +126,9 @@ internal interface IMFTransform
     [PreserveSig] int GetOutputStreamInfo(uint id, out MftOutputStreamInfo info);
     [PreserveSig] int GetAttributes(out IMFAttributes? attributes);
     [PreserveSig] int Unused06(); [PreserveSig] int Unused07();
-    [PreserveSig] int Unused08(); [PreserveSig] int Unused09(); [PreserveSig] int Unused10();
+    [PreserveSig] int Unused08(); [PreserveSig] int Unused09();
+    /// <summary>Slot 10: the input types the transform advertises, which is how it says what it wants.</summary>
+    [PreserveSig] int GetInputAvailableType(uint id, uint index, out IMFMediaType? type);
     [PreserveSig] int GetOutputAvailableType(uint id, uint index, out IMFMediaType? type);
     [PreserveSig] int SetInputType(uint id, IMFMediaType? type, uint flags);
     [PreserveSig] int SetOutputType(uint id, IMFMediaType? type, uint flags);
