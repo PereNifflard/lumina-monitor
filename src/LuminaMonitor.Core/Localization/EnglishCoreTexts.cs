@@ -72,31 +72,4 @@ internal sealed class EnglishCoreTexts : CoreTexts
         string.Create(C, $"HID channel stuck: a report didn't leave within {milliseconds:0} ms");
     public override string ClipboardNeedsTunnel => "Session not connected: the clipboard goes through the tunnel.";
     public override string ClipboardServiceMissing => "Clipboard service missing from the phone's directory.";
-
-    private static string Phone(string name) => string.IsNullOrWhiteSpace(name) ? "the phone" : name;
-    private static string Code(int? code) => code is int c ? $" (0x{c:X8})" : "";
-
-    public override string BluetoothAudioNeedsWindows2004 =>
-        "Receiving the phone's sound over Bluetooth requires Windows 10 version 2004 or later.";
-    public override string PhoneAudioOpening(string phone) => $"Connecting to {Phone(phone)} over Bluetooth…";
-    public override string PhoneAudioOpen(string phone) =>
-        $"Connected: what {Phone(phone)} plays comes out of this PC (Windows's default output).";
-    public override string PhoneAudioWaiting(string phone) =>
-        $"Connection with {Phone(phone)} lost. Pick this PC in the phone's audio menu, or reconnect.";
-    public override string PhoneAudioClosed => "Phone sound on this PC: off.";
-    public override string PhoneAudioTimedOut(string phone) =>
-        $"{Phone(phone)} didn't answer over Bluetooth: is Bluetooth on in the iPhone's Settings (not only Control Center), "
-        + "and the phone within range? You can also tap this PC in the iPhone's Settings › Bluetooth.";
-    public override string PhoneAudioDenied(int? code) =>
-        $"Windows refused the Bluetooth audio connection{Code(code)}. Is Bluetooth on on this PC?";
-    public override string PhoneAudioNotAvailable =>
-        "This phone is no longer a Bluetooth audio source for Windows: pair it again in Bluetooth settings.";
-    public override string PhoneAudioUnknownFailure(int? code) =>
-        $"The Bluetooth audio connection failed{Code(code)}.";
-    public override string PhoneAudioError(int? code) =>
-        $"The Bluetooth audio connection could not be set up{Code(code)}.";
-    public override string CallBridgeEndpointGone =>
-        "Call through the PC stopped: the phone closed its hands-free audio link (call ended?).";
-    public override string CallBridgeFailed(int code) =>
-        $"Call through the PC stopped on an audio error (0x{code:X8}).";
 }

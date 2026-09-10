@@ -28,16 +28,6 @@ using LuminaMonitor.Core.Usb;
 //                                          the phone's sound: the whole negotiation, what the
 //                                          RTP carries, and a raw capture
 //   LuminaMonitor.UsbProbe aac-selftest    does Windows decode the phone's AAC-ELD? Offline
-//   LuminaMonitor.UsbProbe phone-audio [sec] [nom]
-//                                          the phone's sound over Bluetooth (A2DP), played by
-//                                          Windows while the connection is held open
-//   LuminaMonitor.UsbProbe audio-endpoints [--all] [--props]
-//                                          Windows's audio endpoints, the phone's included
-//   LuminaMonitor.UsbProbe winrt-selftest  the hand-written WinRT interop, without a phone
-//   LuminaMonitor.UsbProbe call-bridge [sec] [micro] [sortie]
-//                                          a call through the PC over the hands-free profile
-//   LuminaMonitor.UsbProbe bridge-selftest [sec]
-//                                          the call bridge's pumps, local endpoints, gain 0
 //   LuminaMonitor.UsbProbe sps-selftest    the SPS rewriter: read back, and a second pass
 //   LuminaMonitor.UsbProbe watchdog-selftest  the stream watch's ladder, offline
 //   LuminaMonitor.UsbProbe tcp-selftest    the tunnel's TCP against a paper phone, offline
@@ -431,18 +421,6 @@ if (command == "mouse-flood")
     return MouseFlood.Run(floodSeconds, floodHz, hold, Say);
 }
 
-// The phone's sound over Bluetooth: Windows only, neither cable nor multiplexer.
-if (command == "winrt-selftest")
-    return await BluetoothAudioTools.WinRtSelfTestAsync(Say);
-if (command == "audio-endpoints")
-    return BluetoothAudioTools.Endpoints(args, Say);
-if (command == "phone-audio")
-    return await BluetoothAudioTools.PhoneAudioAsync(args, Say);
-if (command == "bridge-selftest")
-    return BluetoothAudioTools.BridgeSelfTest(args, Say);
-if (command == "call-bridge")
-    return BluetoothAudioTools.CallBridge(args, Say);
-
 UsbmuxClient mux;
 try
 {
@@ -504,10 +482,8 @@ using (mux)
             }
             Say("Session TLS ouverte avec lockdownd — l'hote est de confiance.");
             // Proof: keys that were GetProhibited a moment ago.
-            // BluetoothAddress: compared with the address of the phone Windows has
-            // paired (phone-audio), it tells a stale pairing from a live one.
             await ShowValues(lockdown, "SerialNumber", "ProductVersion", "DevicePublicKey",
-                "TimeZone", "PasswordProtected", "ActivationState", "BluetoothAddress", "DeviceName");
+                "TimeZone", "PasswordProtected", "ActivationState", "DeviceName");
             break;
         }
 

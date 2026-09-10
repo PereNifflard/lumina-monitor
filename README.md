@@ -94,9 +94,8 @@ tunnel and the mirror on its own; the status bar reports where it stands.
 - **F2**: types the Windows clipboard onto the phone. (F2, not Ctrl+V: while
   in control, Ctrl+V would go to the phone, which expects Cmd+V.)
 - **F3**: counters (frames/s, latency, reports sent, errors).
-- **Audio** (bottom bar button): the iPhone's sound on the PC's speakers or
-  headphones, and the PC's microphone during a call, **over Bluetooth** —
-  iPhone paired with the PC; see [Installation](docs/INSTALLATION.md#audio-over-bluetooth).
+- **Audio** (bottom bar button): a panel, empty for now — see "Known
+  limitations" below.
 
 The interface follows the Windows display language (English or French) and
 can be forced in the settings.
@@ -120,6 +119,10 @@ can be forced in the settings.
 - The **Apple Devices** app must be running, or at least have been launched
   once since the phone was plugged in: it's the one carrying the
   multiplexer.
+- **The iPhone's sound is coming soon, over the cable** — a decoder written
+  into this project; see [`docs/AUDIO.md`](docs/AUDIO.md). The **PC's
+  microphone can't serve as the iPhone's microphone**: the cable carries no
+  such capability, Bluetooth or not.
 
 ## Troubleshooting
 

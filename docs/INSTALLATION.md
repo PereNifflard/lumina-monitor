@@ -162,49 +162,21 @@ live in `%APPDATA%\LuminaMonitor\settings.json`. Aside from `unlockCode` if
 you fill it in, nothing secret is written there: pairing belongs to Apple,
 the app only reads it.
 
-### Audio (over Bluetooth)
+### Audio
 
-Over the cable, the iPhone's sound doesn't come through (AAC-ELD, which
-Windows can't decode). It comes through **Bluetooth**, and the **Audio**
-button in the bottom bar opens the panel that handles it. Prerequisites: the
-iPhone is **paired over Bluetooth** with this PC (Windows Settings ›
-Bluetooth & devices), and Bluetooth is on **in the iPhone's Settings** — not
-only in Control Center.
+Over the cable, the iPhone's sound doesn't come through yet (AAC-ELD, which
+Windows can't decode on its own) — and it won't come through **Bluetooth**
+either: that path was tried and abandoned on September 10, 2026, the radio
+link between phone and PC having proved unreliable on the project's own test
+hardware. The **Audio** button in the bottom bar opens a panel that says so,
+and nothing more, for now. The sound is coming, decoded by a codec written
+into this project; see [`AUDIO.md`](AUDIO.md) for the study and the decision.
 
-**iPhone sound on this PC.** Turn on the "iPhone sound on this PC" switch. The
-app looks for the iPhone among the Bluetooth devices (the one named like the
-iPhone on the cable, otherwise the first; a list appears when there are
-several) and opens the connection. The state line says where it stands:
-"Connecting…", "Sound active", "Waiting", "Refused: …". A refusal isn't final:
-the connection **keeps listening**, and tapping this PC in the iPhone's
-**Settings › Bluetooth** opens it; **Retry** asks again from the PC. A dot on
-the Audio button tells you with the panel closed: green while the sound flows,
-amber while it's expected. The choice is remembered (`phoneAudio`) and reopened
-at the next launch.
-
-**Choosing speakers or headphones.** Windows plays this sound on **its default
-output**, the one the "Output: …" line shows; the Windows interface in use has
-no output setting of its own. **Choose output…** opens Windows's page (Volume
-mixer): pick the output there, or change Windows's default output. The app
-never changes the default output itself.
-
-**This PC's microphone during a call.** During a call (phone, FaceTime, a VoIP
-app), pick **this PC** as the audio output on the iPhone's call screen. The
-hands-free link appears and the "PC microphone for calls" switch becomes
-available (it stays greyed out otherwise): pick the microphone and the output
-to hear the call on, then turn it on. This PC's microphone goes to the iPhone,
-the other end's voice plays on the chosen output. When the call ends, the
-bridge stops by itself and the switch goes back to off, with the reason.
-**During the call, the iPhone uses this PC's microphone instead of its own**:
-that is why this switch is never on by default nor at launch. Only the
-microphone and output choices are remembered (`callMicrophone`, `callOutput`).
-
-**Limits, stated plainly.** Sound over Bluetooth is proven in software up to
-the radio, but not yet on an iPhone: on the day of the test, the phone didn't
-answer the PC's Bluetooth call (`0x8007001F`). The call bridge is verified
-between the PC's own devices, not yet on the phone's endpoints. Quality: A2DP
-for music, a hands-free kit's (8 or 16 kHz) for calls. Details and the test
-protocol are in [`BLUETOOTH_AUDIO.md`](BLUETOOTH_AUDIO.md).
+**One direction won't happen at all, cable or not: the PC's microphone can't
+serve as the iPhone's microphone.** The phone advertises no incoming audio
+capability over the cable's protocol — confirmed independently of the
+Bluetooth question — so there is no way, over this cable, to send the PC's
+microphone to the phone.
 
 ## Troubleshooting
 
@@ -229,10 +201,6 @@ Rotates at 5 MB to `lumina.1.log`. This is the file to attach to an issue
 | **Extraction refuses the archive** | The message says which of three cases: unexpected file, incomplete archive (redownload), or the resources package missing (this isn't an Xcode 27 archive). |
 | **Touch doesn't work, buttons do** | That's iOS 26: `CoreDeviceError 9021`, "Remote control requires iOS 27.0 or later." You need iOS 27. |
 | **"Clipboard service unavailable"** | The `pasteboardservice` didn't answer. The app fell back to character-by-character typing: the text still arrives, more slowly, and without anything the US keyboard layout can't spell. |
-| **Audio: "Refused: the iPhone doesn't answer over Bluetooth"** | Bluetooth is off on the iPhone, or only "disconnected" from Control Center. Turn it on in Settings › Bluetooth, then tap this PC in the list: the connection, still listening, opens. |
-| **Audio: "No iPhone paired with this PC over Bluetooth"** | Pair the iPhone in Windows Settings › Bluetooth & devices (the panel's **Bluetooth settings…** button), then **Retry**. |
-| **Audio: sound active but nothing heard** | The sound plays on Windows's default output: check it with **Choose output…**, and the iPhone's volume. |
-| **The iPhone's microphone is dead in its other apps** | A call bridge still holds the hands-free link: turn off the "PC microphone for calls" switch, or close the app. |
 | **"iPhone locked" banner won't go away** | The screen is off — whether from the app, your hand, or the phone's own auto-lock. Click **Wake screen**; if it's still locked afterward, that's Face ID or the passcode, on the phone. |
 
 For a ten-second report instead of a screenshot:

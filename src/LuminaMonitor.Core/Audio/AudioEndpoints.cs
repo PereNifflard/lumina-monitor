@@ -83,7 +83,7 @@ public sealed record AudioSessionInfo(
 /// <remarks>
 /// Every method creates its enumerator and releases it before returning, and
 /// can be called from any thread-pool thread: COM objects here are free-threaded
-/// (the implicit MTA, see <c>WinRtNative.EnsureMta</c>). Do not call from the
+/// (the implicit MTA, see <c>CoreAudioNative.EnsureMta</c>). Do not call from the
 /// window's STA thread: <see cref="Task.Run(Action)"/> first.
 /// </remarks>
 public static class AudioEndpoints
@@ -95,7 +95,7 @@ public static class AudioEndpoints
     /// </summary>
     public static IReadOnlyList<AudioEndpoint> List(AudioFlow? flow = null, bool includeInactive = false)
     {
-        WinRt.WinRtNative.EnsureMta();
+        CoreAudioNative.EnsureMta();
         var enumerator = CoreAudioNative.CreateEnumerator();
         try
         {
@@ -152,7 +152,7 @@ public static class AudioEndpoints
     /// </summary>
     public static float? Peak(string endpointId)
     {
-        WinRt.WinRtNative.EnsureMta();
+        CoreAudioNative.EnsureMta();
         var enumerator = CoreAudioNative.CreateEnumerator();
         try
         {
@@ -189,7 +189,7 @@ public static class AudioEndpoints
     /// </summary>
     public static IReadOnlyList<AudioSessionInfo> Sessions(string endpointId)
     {
-        WinRt.WinRtNative.EnsureMta();
+        CoreAudioNative.EnsureMta();
         var result = new List<AudioSessionInfo>();
         var enumerator = CoreAudioNative.CreateEnumerator();
         try
@@ -249,7 +249,7 @@ public static class AudioEndpoints
     /// </summary>
     internal static IReadOnlyList<string> DumpProperties(string endpointId)
     {
-        WinRt.WinRtNative.EnsureMta();
+        CoreAudioNative.EnsureMta();
         var lines = new List<string>();
         var enumerator = CoreAudioNative.CreateEnumerator();
         try

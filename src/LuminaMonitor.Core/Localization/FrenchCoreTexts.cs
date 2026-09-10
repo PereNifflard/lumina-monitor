@@ -71,31 +71,4 @@ internal sealed class FrenchCoreTexts : CoreTexts
         $"canal HID bloqué : un rapport n'est pas parti en {milliseconds:0} ms";
     public override string ClipboardNeedsTunnel => "Session non connectée : le presse-papiers passe par le tunnel.";
     public override string ClipboardServiceMissing => "Service presse-papiers absent de l'annuaire du téléphone.";
-
-    private static string Phone(string name) => string.IsNullOrWhiteSpace(name) ? "le téléphone" : name;
-    private static string Code(int? code) => code is int c ? $" (0x{c:X8})" : "";
-
-    public override string BluetoothAudioNeedsWindows2004 =>
-        "Recevoir le son du téléphone en Bluetooth demande Windows 10 version 2004 ou plus récent.";
-    public override string PhoneAudioOpening(string phone) => $"Connexion Bluetooth à {Phone(phone)}…";
-    public override string PhoneAudioOpen(string phone) =>
-        $"Connecté : ce que joue {Phone(phone)} sort de ce PC (sortie par défaut de Windows).";
-    public override string PhoneAudioWaiting(string phone) =>
-        $"Liaison avec {Phone(phone)} perdue. Choisis ce PC dans le menu audio du téléphone, ou reconnecte.";
-    public override string PhoneAudioClosed => "Son du téléphone sur ce PC : coupé.";
-    public override string PhoneAudioTimedOut(string phone) =>
-        $"{Phone(phone)} ne répond pas en Bluetooth : Bluetooth activé dans les Réglages de l'iPhone (pas seulement "
-        + "le Centre de contrôle) et téléphone à portée ? Tu peux aussi toucher ce PC dans Réglages › Bluetooth de l'iPhone.";
-    public override string PhoneAudioDenied(int? code) =>
-        $"Windows a refusé la connexion audio Bluetooth{Code(code)}. Le Bluetooth de ce PC est-il activé ?";
-    public override string PhoneAudioNotAvailable =>
-        "Ce téléphone n'est plus une source audio Bluetooth pour Windows : appaire-le de nouveau dans les réglages Bluetooth.";
-    public override string PhoneAudioUnknownFailure(int? code) =>
-        $"La connexion audio Bluetooth a échoué{Code(code)}.";
-    public override string PhoneAudioError(int? code) =>
-        $"Impossible d'établir la connexion audio Bluetooth{Code(code)}.";
-    public override string CallBridgeEndpointGone =>
-        "Appel par le PC arrêté : le téléphone a fermé sa liaison audio mains-libres (fin d'appel ?).";
-    public override string CallBridgeFailed(int code) =>
-        $"Appel par le PC arrêté sur une erreur audio (0x{code:X8}).";
 }

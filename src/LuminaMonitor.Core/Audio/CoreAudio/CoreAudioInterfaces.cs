@@ -235,6 +235,9 @@ internal static class CoreAudioNative
     public const ushort VtUi4 = 19;
     public const ushort VtClsid = 72;
 
+    private static readonly object MtaGate = new();
+    private static IntPtr _mtaCookie;
+
     [DllImport("ole32.dll", ExactSpelling = true)]
     public static extern int CoCreateInstance(ref Guid clsid, IntPtr outer, uint context, ref Guid iid,
         [MarshalAs(UnmanagedType.Interface)] out object instance);
@@ -242,11 +245,29 @@ internal static class CoreAudioNative
     [DllImport("ole32.dll", ExactSpelling = true)]
     public static extern int PropVariantClear(IntPtr value);
 
+    [DllImport("ole32.dll", ExactSpelling = true)]
+    private static extern int CoIncrementMTAUsage(out IntPtr cookie);
+
     /// <summary>Throws with the HRESULT in hexadecimal.</summary>
     public static void Check(int hr, string what)
     {
         if (hr < 0)
             throw new COMException($"{what} : HRESULT 0x{hr:X8}", hr);
+    }
+
+    /// <summary>
+    /// Keeps the process's multithreaded apartment alive, once. A thread-pool
+    /// thread that has not initialized COM itself belongs to the implicit MTA
+    /// only once something has called this for the process; without it, the
+    /// calls below can answer CO_E_NOTINITIALIZED.
+    /// </summary>
+    public static void EnsureMta()
+    {
+        lock (MtaGate)
+        {
+            if (_mtaCookie != IntPtr.Zero) return;
+            Check(CoIncrementMTAUsage(out _mtaCookie), "CoIncrementMTAUsage");
+        }
     }
 
     /// <summary>A CoTaskMem string handed over by the callee, read and freed.</summary>

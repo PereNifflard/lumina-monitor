@@ -93,9 +93,8 @@ tunnel et le miroir toute seule ; la barre d'état dit où elle en est.
 - **F2** : taper le presse-papiers Windows sur le téléphone. (F2 et pas Ctrl+V :
   pendant le pilotage, Ctrl+V partirait au téléphone, qui attend Cmd+V.)
 - **F3** : compteurs (images/s, latence, rapports envoyés, erreurs).
-- **Audio** (bouton de la barre du bas) : le son de l'iPhone sur les
-  haut-parleurs ou le casque du PC, et le micro du PC pendant un appel, **par
-  Bluetooth** — iPhone appairé au PC ; voir [Installation](docs/INSTALLATION.fr.md#audio-par-bluetooth).
+- **Audio** (bouton de la barre du bas) : un panneau, vide pour l'instant —
+  voir « Limites connues » plus bas.
 
 L'interface suit la langue d'affichage de Windows (anglais ou français) et
 peut être forcée dans les réglages.
@@ -117,6 +116,10 @@ peut être forcée dans les réglages.
   ses essais (5 s, doublés, plafond 30 s) au lieu d'insister.
 - L'app **Appareils Apple** doit tourner, ou au moins avoir été lancée une fois
   depuis le branchement : c'est elle qui porte le multiplexeur.
+- **Le son de l'iPhone arrive bientôt, par le câble** — un décodeur écrit dans
+  ce projet ; voir [`docs/AUDIO.fr.md`](docs/AUDIO.fr.md). Le **micro du PC ne
+  peut pas servir de micro à l'iPhone** : le câble ne porte pas cette
+  capacité, Bluetooth ou pas.
 
 ## Dépannage
 

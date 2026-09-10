@@ -299,3 +299,19 @@ LuminaMonitor.UsbProbe audio-leak-test                  # opens a stream and doe
 
 `audio-info` variants: `default`, `f2:<n>`, `f3:<n>`, `f4:<n>`, `f5:<n>`, `f6:<n>`,
 `paliers-sans-codec`, `paliers-codec-seuls`, combinable with `+`.
+
+## 9. Decision, September 10 2026
+
+Bluetooth is off the table, for both halves of this document: not because it was never tried, but
+because it was tried and found unreliable — the radio link between the iPhone and the project's own
+test PC did not hold up. That closes §4c (Bluetooth as the sound source) and the Bluetooth
+hands-free stand-in §5 pointed to for the microphone.
+
+The iPhone's sound will come over the cable instead, decoded by an AAC-ELD decoder written into
+this project — §4a, now underway.
+
+The PC's microphone into the phone stays impossible, cable included, and Bluetooth going away
+changes nothing there: §5 already showed the phone advertises no incoming capability over
+CoreDevice (`direction: "input"` is accepted and echoed back but changes nothing;
+`getmediasupportinfo` lists no capture feature), and that was true before this decision and stays
+true after it.

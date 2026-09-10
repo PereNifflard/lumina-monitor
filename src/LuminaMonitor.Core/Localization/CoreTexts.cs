@@ -89,19 +89,4 @@ internal abstract class CoreTexts
     public abstract string HidChannelStuck(double milliseconds);
     public abstract string ClipboardNeedsTunnel { get; }
     public abstract string ClipboardServiceMissing { get; }
-
-    // --- The phone's sound over Bluetooth (Audio/) ---------------------------------
-
-    public abstract string BluetoothAudioNeedsWindows2004 { get; }
-    public abstract string PhoneAudioOpening(string phone);
-    public abstract string PhoneAudioOpen(string phone);
-    public abstract string PhoneAudioWaiting(string phone);
-    public abstract string PhoneAudioClosed { get; }
-    public abstract string PhoneAudioTimedOut(string phone);
-    public abstract string PhoneAudioDenied(int? code);
-    public abstract string PhoneAudioNotAvailable { get; }
-    public abstract string PhoneAudioUnknownFailure(int? code);
-    public abstract string PhoneAudioError(int? code);
-    public abstract string CallBridgeEndpointGone { get; }
-    public abstract string CallBridgeFailed(int code);
 }

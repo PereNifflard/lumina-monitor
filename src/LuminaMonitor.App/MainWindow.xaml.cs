@@ -303,9 +303,6 @@ public partial class MainWindow : Window
 
         _display.Tick += (_, _) => UpdateMetrics();
         _display.Start();
-
-        // Started and stopped by the Audio panel; idle otherwise.
-        _audioPoll.Tick += OnAudioPoll;
     }
 
     /// <summary>Reads <c>--diagnostic &lt;secondes&gt;</c>; zero means an ordinary run.</summary>
@@ -374,10 +371,6 @@ public partial class MainWindow : Window
         // developer image was unpacked.
         if (Settings.RescuedTo is string rescued)
             Report(t => t.SettingsUnreadable(rescued));
-
-        // Bluetooth, not the cable: the phone's sound comes back as it was left,
-        // whatever the session below is doing.
-        StartAudioAtLaunch();
 
         // A replay run never touches the cable: no multiplexer, no developer
         // image, no session. Everything above the depacketizer is the same code.
@@ -2079,7 +2072,6 @@ public partial class MainWindow : Window
             _settings.Save();
         }
 
-        ShutDownAudio();
         _watcher?.Dispose();
         var replay = _replay;
         _replay = null;

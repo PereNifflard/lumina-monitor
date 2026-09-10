@@ -163,50 +163,21 @@ Les réglages (sens de la molette, couleur du châssis, position de la fenêtre,
 `unlockCode` si tu le remplis, rien de secret n'y est écrit : l'appairage
 appartient à Apple, l'app se contente de le lire.
 
-### Audio (par Bluetooth)
+### Audio
 
-Par le câble, le son de l'iPhone ne passe pas (AAC-ELD, que Windows ne sait pas
-décoder). Il passe par **Bluetooth**, et le bouton **Audio** de la barre du bas
-ouvre le panneau qui s'en occupe. Prérequis : l'iPhone est **appairé en
-Bluetooth** avec ce PC (Paramètres Windows › Bluetooth et appareils), et le
-Bluetooth est activé **dans les Réglages** de l'iPhone — pas seulement dans le
-Centre de contrôle.
+Par le câble, le son de l'iPhone ne passe pas encore (AAC-ELD, que Windows ne
+sait pas décoder seul) — et il ne passera pas non plus par **Bluetooth** :
+cette voie a été essayée puis abandonnée le 10 septembre 2026, la liaison
+radio entre le téléphone et le PC d'essai du projet s'étant montrée peu
+fiable. Le bouton **Audio** de la barre du bas ouvre un panneau qui le dit,
+rien de plus pour l'instant. Le son arrive, décodé par un décodeur écrit dans
+ce projet ; voir [`AUDIO.fr.md`](AUDIO.fr.md) pour l'étude et la décision.
 
-**Le son de l'iPhone sur ce PC.** Active l'interrupteur « Son de l'iPhone sur
-ce PC ». L'app cherche l'iPhone parmi les appareils Bluetooth (celui qui porte
-le nom de l'iPhone branché, sinon le premier ; une liste apparaît s'il y en a
-plusieurs) et ouvre la connexion. La ligne d'état dit où elle en est :
-« Connexion… », « Son actif », « En attente », « Refusé : … ». Un refus n'est pas
-définitif : la connexion **reste à l'écoute**, et il suffit de toucher ce PC dans
-**Réglages › Bluetooth** de l'iPhone pour qu'elle s'ouvre ; **Réessayer** refait
-la demande depuis le PC. Une pastille sur le bouton Audio le dit, panneau
-fermé : verte quand le son passe, ambre quand il est attendu. Le choix est
-retenu (`phoneAudio`) et rouvert au lancement suivant.
-
-**Choisir haut-parleurs ou casque.** Windows joue ce son sur **sa sortie par
-défaut**, celle qu'affiche la ligne « Sortie : … » ; l'interface Windows utilisée
-n'a aucun réglage de sortie. **Choisir la sortie…** ouvre la page de Windows
-(Mélangeur de volume) : choisis-y la sortie, ou change la sortie par défaut de
-Windows. L'app ne change jamais la sortie par défaut elle-même.
-
-**Le micro de ce PC pendant un appel.** Pendant un appel (téléphone, FaceTime,
-application de VoIP), choisis **ce PC** comme sortie audio dans l'écran d'appel
-de l'iPhone. La liaison mains-libres apparaît, l'interrupteur « Micro de ce PC
-pour les appels » devient actif (il reste grisé sinon) : choisis le micro et la
-sortie où entendre l'appel, puis active. Le micro de ce PC part vers l'iPhone,
-la voix de l'autre bout sort de la sortie choisie. En fin d'appel, le pont
-s'arrête seul et l'interrupteur revient à zéro, avec la raison. **Pendant
-l'appel, l'iPhone utilise le micro de ce PC à la place du sien** : c'est pour
-cela que cet interrupteur n'est jamais activé par défaut ni au lancement. Seuls
-les choix de micro et de sortie sont retenus (`callMicrophone`, `callOutput`).
-
-**Limites, dites telles quelles.** Le son par Bluetooth est prouvé côté
-logiciel jusqu'à la radio, mais pas encore sur un iPhone : le jour de l'essai,
-le téléphone n'a pas répondu à l'appel Bluetooth du PC (`0x8007001F`). Le pont
-d'appel est vérifié entre des périphériques du PC, pas encore sur les points de
-terminaison du téléphone. Qualité : celle de l'A2DP pour la musique, celle d'un
-kit mains-libres (8 ou 16 kHz) pour les appels. Le détail et le protocole de
-test sont dans [`BLUETOOTH_AUDIO.fr.md`](BLUETOOTH_AUDIO.fr.md).
+**Un sens ne se fera jamais, câble ou pas : le micro du PC ne peut pas servir
+de micro à l'iPhone.** Le téléphone n'annonce aucune capacité audio entrante
+par le protocole du câble — constaté indépendamment de la question du
+Bluetooth — donc il n'existe aucun moyen, par ce câble, d'envoyer le micro du
+PC vers le téléphone.
 
 ## Dépannage
 
@@ -231,10 +202,6 @@ issue (extrait uniquement, et **sans l'identifiant de l'appareil**).
 | **L'extraction refuse l'archive** | Le message dit lequel des trois cas : fichier inattendu, archive incomplète (retélécharger), ou paquet des ressources absent (ce n'est pas une archive Xcode 27). |
 | **Le toucher ne passe pas, les boutons oui** | C'est iOS 26 : `CoreDeviceError 9021`, « Remote control requires iOS 27.0 or later ». Il faut iOS 27. |
 | **« Service presse-papiers indisponible »** | Le service `pasteboardservice` n'a pas répondu. L'app est retombée sur la frappe caractère par caractère : le texte arrive quand même, plus lentement, et sans ce que le clavier US ne sait pas épeler. |
-| **Audio : « Refusé : l'iPhone ne répond pas en Bluetooth »** | Bluetooth coupé sur l'iPhone, ou seulement « déconnecté » depuis le Centre de contrôle. Active-le dans Réglages › Bluetooth, puis touche ce PC dans la liste : la connexion, restée à l'écoute, s'ouvre. |
-| **Audio : « Aucun iPhone appairé en Bluetooth »** | Appaire l'iPhone dans Paramètres Windows › Bluetooth et appareils (bouton **Réglages Bluetooth…** du panneau), puis **Réessayer**. |
-| **Audio : son actif mais rien ne s'entend** | Le son sort sur la sortie par défaut de Windows : vérifie-la avec **Choisir la sortie…**, et le volume de l'iPhone. |
-| **Micro de l'iPhone muet dans ses autres apps** | Un pont d'appel tient encore la liaison mains-libres : coupe l'interrupteur « Micro de ce PC pour les appels », ou ferme l'app. |
 | **Bandeau « iPhone verrouillé » qui reste** | L'écran est éteint — que ce soit l'app, ta main ou le verrouillage automatique du téléphone. Clique **Réveiller l'écran** ; s'il reste verrouillé après ça, c'est Face ID ou le code, sur le téléphone. |
 
 Pour un rapport de dix secondes plutôt qu'une capture d'écran :

@@ -295,3 +295,19 @@ LuminaMonitor.UsbProbe audio-leak-test                  # ouvre un flux et ne le
 
 Variantes de `audio-info` : `default`, `f2:<n>`, `f3:<n>`, `f4:<n>`, `f5:<n>`, `f6:<n>`,
 `paliers-sans-codec`, `paliers-codec-seuls`, combinables avec `+`.
+
+## 9. Décision, 10 septembre 2026
+
+Le Bluetooth est écarté, pour les deux moitiés de ce document : pas parce qu'il n'a jamais été
+essayé, mais parce qu'il l'a été et s'est montré peu fiable — la liaison radio entre l'iPhone et le
+PC d'essai du projet n'a pas tenu. Cela ferme le § 4c (le Bluetooth comme source du son) et le
+recours au mains-libres Bluetooth que le § 5 indiquait pour le micro.
+
+Le son de l'iPhone passera par le câble à la place, décodé par un décodeur AAC-ELD écrit dans ce
+projet — § 4a, maintenant en chantier.
+
+Le micro du PC vers le téléphone reste impossible, câble compris, et la disparition du Bluetooth
+n'y change rien : le § 5 montrait déjà que le téléphone n'annonce aucune capacité entrante par
+CoreDevice (`direction : "input"` est acceptée et renvoyée telle quelle mais ne change rien ;
+`getmediasupportinfo` ne liste aucune fonction de capture), et cela restait vrai avant cette
+décision comme après elle.
