@@ -63,7 +63,9 @@ jobs:
             'sps-selftest',       # la réécriture du SPS, relue et repassée
             'watchdog-selftest',  # l'échelle de la veille du flux, sur des instants inventés
             'tcp-selftest',       # la pile TCP du tunnel contre un téléphone de papier
-            'aac-selftest'        # ce que le décodeur AAC de Windows accepte, et ce qu'il refuse
+            'aac-selftest',       # ce que le décodeur AAC de Windows accepte, et ce qu'il refuse
+            'aac-tables-selftest',# les tables normatives de l'AAC-ELD, vérifiées par le calcul
+            'aac-selftest-decode' # le décodeur AAC-ELD maison sur des trames dont on sait la réponse
           )
           foreach ($test in $tests) {
             Write-Host "=== $test"
@@ -80,6 +82,33 @@ jobs:
           & $probe mf-selftest
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::warning::mf-selftest a rendu $LASTEXITCODE sur ce runner (Media Foundation absente ?)."
+          }
+
+      # La chaîne audio complète — pompe, décodeur, tampon de gigue, sortie —
+      # jouée à sec : --dry n'ouvre aucun périphérique, ce qui est aussi bien,
+      # un runner n'en a pas. La capture est fabriquée à la volée (200 trames
+      # silencieuses du téléphone) parce que les vraies captures ne sont pas
+      # dans le dépôt ; celle de la machine de développement est jouée en plus
+      # quand elle est là. --delay=150 au lieu des 50 ms par défaut : le coussin
+      # doit absorber les pauses d'un runner partagé, sinon la file se vide et
+      # le test échoue pour une raison qui n'est pas la chaîne audio.
+      - name: Chaîne audio à sec
+        shell: pwsh
+        run: |
+          $probe = 'src/LuminaMonitor.UsbProbe/bin/Release/net8.0-windows/LuminaMonitor.UsbProbe.exe'
+          Write-Host '=== audio-play --silence --dry'
+          & $probe audio-play --silence --delay=150 --dry
+          if ($LASTEXITCODE -ne 0) {
+            throw "audio-play --silence a rendu $LASTEXITCODE"
+          }
+          if (Test-Path 'audio_default.rtp') {
+            Write-Host '=== audio-play audio_default.rtp --dry'
+            & $probe audio-play audio_default.rtp --delay=150 --dry
+            if ($LASTEXITCODE -ne 0) {
+              throw "audio-play audio_default.rtp a rendu $LASTEXITCODE"
+            }
+          } else {
+            Write-Host '::notice::audio_default.rtp absent (ignoré par git) — seule la capture synthétique est jouée.'
           }
 
       - name: Téléverser l'app compilée

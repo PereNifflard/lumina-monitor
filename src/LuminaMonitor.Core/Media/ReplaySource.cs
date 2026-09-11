@@ -44,7 +44,7 @@ public sealed class ReplaySource : IDisposable
     public ReplaySource(string path)
     {
         Path = path;
-        foreach (var record in ReadCapture(path))
+        foreach (var record in RtpCapture.Read(path))
             _records.Add(record);
     }
 
@@ -262,34 +262,4 @@ public sealed class ReplaySource : IDisposable
         FrameDecoded?.Invoke(frame);
     }
 
-    // --- The capture file --------------------------------------------------------
-
-    /// <summary>The probe's capture format: [u32 size][u64 microseconds][datagram].</summary>
-    private static IEnumerable<(byte[] Datagram, long Microseconds)> ReadCapture(string path)
-    {
-        using var file = File.OpenRead(path);
-        byte[] header = new byte[12];
-        while (true)
-        {
-            if (!Fill(file, header, 12)) yield break;
-            int size = (int)BinaryPrimitives.ReadUInt32LittleEndian(header);
-            long microseconds = (long)BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(4));
-            if (size is <= 0 or > 65535) yield break;
-            byte[] datagram = new byte[size];
-            if (!Fill(file, datagram, size)) yield break;
-            yield return (datagram, microseconds);
-        }
-    }
-
-    private static bool Fill(Stream stream, byte[] buffer, int count)
-    {
-        int at = 0;
-        while (at < count)
-        {
-            int read = stream.Read(buffer, at, count - at);
-            if (read <= 0) return false;
-            at += read;
-        }
-        return true;
-    }
 }

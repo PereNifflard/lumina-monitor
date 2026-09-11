@@ -158,6 +158,11 @@ reader and syntax walk, consuming exactly each AU with no error — verifiable o
 sound produced; (2) inverse quantisation and MDCT, checked on a silence frame whose output is
 known (zero); (3) the rest, by ear.
 
+> **Correction, 10 September 2026, the same evening.** The estimate above was wrong on both counts.
+> Once the tables in `docs/AAC_ELD_TABLES.md` were assembled, the decoder itself was written in one
+> sitting: about 1,900 lines, not 3,000–5,000, and it exists the same day rather than in two to four
+> weeks. See §10, "The home-grown decoder," below.
+
 **b) A fallback codec.** Ruled out by the §1 measurement: the offer has no bank, and the only
 existing lever (`f4`) does not change the phone's choice.
 
@@ -274,18 +279,22 @@ Disconnect); if it comes back, that is the cause.
 
 ## 7. What remains to be measured
 
-1. **The actual sound**: `audio-info 10 son.rtp` with music playing on the phone (bitrate, frame
-   size, payload content).
-2. **Audio and video in the same session**, with the same
-   `avcMediaStreamOptionClientSessionID`, as Xcode's mirror does: `audio-info 5 --video`. The code
-   is written and the guard spares the video session; all three attempts on 9 September ran into a
-   display service that had gone deaf ("no SETTINGS from the phone in 3 s"), whose known
-   remedy — unmounting the developer image — requires an **unlocked** phone, which it no longer
-   was.
+1. ~~**The actual sound**~~ — **measured, 10 September 2026, 20:40.** Thirty seconds captured with a
+   video playing on the phone: 3,029 frames, 372 bytes per frame on average, 0.30 Mbit/s, 101
+   packets/s, no loss. Decoded whole and listened to; the numbers are in §10.
+2. ~~**Audio and video in the same session**~~ — **proven, 10 September 2026, 21:12.**
+   `audio-info 5 --video`: the video stream opened first, as Xcode's mirror does, then the audio
+   stream with `PairedSessionId = video.SessionId` — the same
+   `avcMediaStreamOptionClientSessionID` for both — **503 audio packets in 5 s, no loss**, and both
+   streams closed cleanly with the phone hanging up on each service. That order is now what
+   `DeviceSession` does; see §11.
 3. The tier variants (`paliers-sans-codec`, `paliers-codec-seuls`), to finish ruling out the tier
    table as the place where the codec choice happens.
 4. Does an orphaned **video** stream also affect the microphone? That is the only hypothesis that
    would explain the symptom from before the audio path even existed.
+5. **The delay is not aligned automatically.** §11 measures the gap between sound and picture every
+   five seconds and does nothing with it. What is missing to close the loop is not the measurement
+   but the decision: how fast to move a delay without making the movement itself audible.
 
 ## 8. The commands
 
@@ -295,6 +304,8 @@ LuminaMonitor.UsbProbe audio-info [sec] [capture.rtp] [--variant=…] [--video] 
 LuminaMonitor.UsbProbe media-status [sec]               # what the phone thinks is running
 LuminaMonitor.UsbProbe media-release                    # closes orphaned sessions
 LuminaMonitor.UsbProbe audio-leak-test                  # opens a stream and does NOT close it (measurement)
+LuminaMonitor.UsbProbe audio-play <capture.rtp|--silence[=frames]> [--device=<id|default>] [--delay=<ms>] [--dry]
+LuminaMonitor.UsbProbe audio-devices                    # offline: the Windows outputs and their mix formats
 ```
 
 `audio-info` variants: `default`, `f2:<n>`, `f3:<n>`, `f4:<n>`, `f5:<n>`, `f6:<n>`,
@@ -315,3 +326,285 @@ changes nothing there: §5 already showed the phone advertises no incoming capab
 CoreDevice (`direction: "input"` is accepted and echoed back but changes nothing;
 `getmediasupportinfo` lists no capture feature), and that was true before this decision and stays
 true after it.
+
+(Continued the same evening: §10, "The home-grown decoder," below.)
+
+## 10. The home-grown decoder
+
+Written the same evening as the decision above, once the tables of
+[`docs/AAC_ELD_TABLES.md`](AAC_ELD_TABLES.md) were assembled: about 1,900 lines across 14 files in
+`src/LuminaMonitor.Core/Media/Aac/`, no package referenced, nothing of FFmpeg, FDK-AAC or faad2
+read. This section records what it does, what it does not, what was measured, and what is not
+settled yet.
+
+### What each file does
+
+| File | Role |
+|---|---|
+| `BitReader.cs` | MSB-first, no-copy bit reader, plus `AacBitstreamException` (a reason and a bit position) |
+| `AudioSpecificConfig.cs` | the ASC and `ELDSpecificConfig`, extension chain included, with `Validate()` |
+| `Huffman.cs` | the twelve books, as binary trees |
+| `SectionData.cs` | the ER variant: `sect_len_incr` on five bits, escape at 31 |
+| `ScaleFactors.cs` | the three chains — scalefactors, noise energy, intensity position |
+| `TnsData.cs` | the TNS filter data |
+| `SpectralData.cs` | quadruples and pairs, signs then book 11's escape |
+| `Dequantizer.cs` | `|q|^(4/3)` and `2^(0.25·(sf−100))`, tabulated |
+| `Tns.cs` | the all-pole filter |
+| `Stereo.cs` | M/S and intensity |
+| `Pns.cs` | unit-energy noise, left/right correlation |
+| `EldFilterBank.cs` | the low-delay synthesis filterbank, folded onto a DCT-IV, overlap of the three previous blocks |
+| `EldSyntax.cs` | the element sequence with no identifiers — CPE/SCE |
+| `AacEldDecoder.cs` | the public API and the counters |
+
+Not implemented, each refused with a typed reason rather than silently ignored: low-delay SBR, ELD
+extensions (SAOC, MPEG Surround), HCR/RVLC resilience, more than two channels. No allocation per
+frame in steady state — see the measurements below.
+
+### The API
+
+```csharp
+var decoder = new AacEldDecoder(audioSpecificConfig);
+bool ok = decoder.Decode(accessUnit, pcmInterleaved, out int samplesPerChannel);
+```
+
+`Decode(ReadOnlySpan<byte> accessUnit, Span<float> pcmInterleaved, out int samplesPerChannel)`
+decodes one access unit into interleaved float PCM at ±1 full scale. It returns `false` on a frame
+it could not read rather than throwing, so a caller reading a live stream moves on to the next
+frame; the counters say why and how much:
+
+- `FramesDecoded`, `FramesFailed`
+- `BitsConsumed`, `BitsAvailable` — the last frame's syntax length against what it was given
+- `PaddingIsZero` — whether everything after the syntax was the zero padding a well-formed frame
+  ends on
+- `LastFailure` — the `AacBitstreamException` of the last refused frame, or null
+
+### The probe's commands
+
+```
+LuminaMonitor.UsbProbe aac-selftest-decode
+LuminaMonitor.UsbProbe decode-audio <capture.rtp> <output.wav> [--frame=480|512]
+```
+
+`aac-selftest-decode` runs 18 checks offline, no phone needed: the phone's own silent frame
+(`00 68 34 00`) against its known bit count and all-zero output; frames built by hand with known
+spectral values per channel, checked against a filterbank fed the same spectrum directly; a
+truncated frame, which must be refused at the bit it runs out on; no-allocation over 1,000 frames;
+800 random legal frames exercising every codebook, noise substitution, intensity stereo and TNS.
+
+`decode-audio` replays a capture through the decoder end to end and writes a WAV file — 48 kHz,
+stereo, 16-bit, the 44-byte RIFF header written by hand, no library — while measuring what does not
+show up in a listen: bits consumed per frame, continuity across frame boundaries, RMS and peak,
+non-finite samples, decode time.
+
+### What was measured, 10 September 2026
+
+- **`aac-tables-selftest`: 28/28.** Perfect filterbank reconstruction, worst residual 1.3e-8 (see
+  `docs/AAC_ELD_TABLES.md` §4).
+- **`aac-selftest-decode`: 18/18.** The silent frame consumes 26 of its 32 bits, zero padding, and
+  produces 480×2 then 512×2 zero samples; frames built at 480 and at 512 read back exactly what was
+  written, with a gap ≤ 1.5e-8 against full scale (32768) over six consecutive frames; 800 random
+  legal frames: 0 bit disagreements, 0 non-finite samples, 0.16–0.19 ms per frame.
+- **The silent capture, `audio_default.rtp`** (1,211 frames, payload type 101): 1,211/1,211 decoded,
+  26.0 bits per frame, 0 frame ending early, late, or on non-zero padding, output strictly zero,
+  0.145 ms per frame against a 10 ms budget.
+- **A real capture with music** (30 s, 10 September 2026, 20:40, a video playing on the phone):
+  3,029 frames, 372 bytes per frame on average, 0.30 Mbit/s, 101 packets/s, no loss. Decoded at
+  **480**: 3,029/3,029 decoded, 0 failures, 8,804,260 of 8,814,776 bits used (99.9%), 2,906.7
+  bits/frame on average, 0 frame ending early, late, or on non-zero padding, peak +3.4 dBFS (238
+  samples clipped out of 2,907,840, 0.008% — a normal overshoot on transients), RMS −16.2 dBFS, 0
+  non-finite value, boundary continuity 1.398e-2 against 1.374e-2 elsewhere (ratio 1.017, so no
+  click at frame boundaries), 0.140 ms per frame on average, 0.825 ms at worst. Decoded at **512**:
+  63 decoded, 2,966 failed, the first failure at frame 1 ("section claims 8 bands from band 26,
+  past `max_sfb` 34") — full detail and the conclusion (480) in
+  [`docs/AAC_ELD_TABLES.md`](AAC_ELD_TABLES.md) §5.
+
+This proves the bit reader is exact: a syntax error would end a frame somewhere other than its
+padding, which is exactly what the 512 run shows and the 480 run does not, across 3,029 frames. It
+does not yet prove that the filterbank's phase convention is the one Apple's encoder used — only
+listening to the decoded output says that.
+
+### Choices made without certainty
+
+Seven places where the reference software's own text was not enough on its own, and a choice had to
+be made and recorded rather than left implicit:
+
+1. **TNS filter lengths** are counted down from the total band count, then clamped to
+   `min(max_sfb, ceiling)` — read off `get_tns()` in `huffdec2.c` and `tns.c` of the reference
+   software.
+2. **Output full scale is ±1** through a `FullScale = 32768` constant; the reference decoder writes
+   `time_sample_vector` straight out as 16-bit integers with no scaling of its own.
+3. **480 samples per frame by default**, despite `frameLengthFlag = 0` meaning 512 in the reference
+   software. The silent capture's RTP timestamp step (exactly 480 every packet) pointed to 480
+   first; the real capture's own timestamp step is not that clean, but decoding it settles the
+   question directly — 480 goes through end to end, 512 fails at frame 1 (§5 of
+   `docs/AAC_ELD_TABLES.md`).
+4. **A frame with an out-of-range value is refused, not clamped** — the reference software only
+   tolerates that under its error-protection flags, which are 0 here.
+5. **A failed frame's overlap is drained (`Flush`), not zeroed**, so the tail fades out instead of
+   clicking.
+6. **`tns_data` is read right after its own flag**, with resilience at 0 and nothing between the
+   two.
+7. **PNS energy is `2^(0.25·energy)` over a unit-energy noise** from a congruential generator, with
+   left/right correlation honoured.
+
+### Limits
+
+No low-delay SBR, no ELD extensions, no HCR/RVLC resilience, no more than two channels — each
+refused with a typed reason rather than silently mishandled. No bit-exact conformance vector exists
+to check against (ISO sells those separately); the self-tests prove internal consistency and exact
+bit consumption, not a sample-by-sample match against a reference decoder, because none is
+available on this machine.
+
+### State
+
+**Confirmed by ear on 10 September 2026.** The 30-second capture, decoded with the 480-sample
+tables and copied to a WAV, was listened to against the video that had been playing on the phone:
+same music, no noise, normal level. The numbers above (exact bit consumption, no clipping beyond
+normal transients, no click at frame boundaries, no non-finite sample) were necessary; the ear was
+the sufficient test, and the filterbank's phase convention is the one Apple's encoder uses. Next
+step: rendering inside the app — a WASAPI output to choose, volume, and synchronisation with the
+picture.
+
+## 11. In the application
+
+Written on 10 September 2026, the same evening as the decoder, once §7's first two questions had
+answers. What this section describes is code, not a plan: the chain runs, the self-tests measure it,
+and the one thing it has not had yet is a pair of ears on the live stream.
+
+### The chain, end to end
+
+```
+phone ─ RTP/UDP over the tunnel ─▶ AudioSession ─▶ AudioRenderer ─▶ AudioJitterBuffer ─▶ WasapiOutput ─▶ endpoint
+        one access unit per packet   RTCP RR 1/s    demux, sequence,   target fill,         shared mode,
+        PT 101, +480 ts, 10 ms       BYE on stop    AAC-ELD decode     drop / silence       event-driven
+```
+
+Six files in `src/LuminaMonitor.Core/Audio/` and one in `Media/`, and each of them does one thing:
+
+| File | Role |
+|---|---|
+| `Media/AudioStream.cs` | the session and the chain together, plus the synchronisation diagnostic |
+| `Audio/AudioRenderer.cs` | the chain in one object: demux, loss, decode, queue — shared with the probe |
+| `Audio/AudioJitterBuffer.cs` | the ring of frames between the phone's clock and the sound card's |
+| `Audio/WasapiOutput.cs` | one shared-mode render stream, driven by the endpoint's own event |
+| `Audio/AudioSink.cs` | the sink interface, and the dry sink that opens no endpoint at all |
+| `Audio/AudioFormat.cs` | `WAVEFORMATEX` by hand, and the one conversion this project does itself |
+| `Audio/AudioOptions.cs`, `AudioStats.cs` | what a person decides, and what the chain counted |
+
+### Where it sits in the ladder
+
+`DeviceSession` opens the sound **after** the picture and **attached to it** — the audio offer
+carries the video stream's own client session id, which is what §7.2 proved works. Three properties
+of that order are deliberate:
+
+- **the mirror is declared up first.** The sound opens on a task of its own, the moment the picture
+  is in place. The first version waited six seconds (`AudioSettleMs`), copying the pause
+  `audio-info --video` used in the run that proved the two streams could share a session; on
+  11 September 2026 `audio-info --video --settle=0` showed the phone accepting the audio offer with
+  no pause at all (400 packets in four seconds, both streams closing cleanly), and with one second.
+  The display service's known refusals are between two *sessions*; a second stream joining the one
+  it already runs is not one. The constant stays, at zero, so that a wait has a name should a phone
+  ever need one. Nobody waits for a sound; everybody waits for a picture;
+- **a refusal is not fatal.** The picture stays, the panel says why, and `OpenAudioAsync` can be
+  called again from the panel's own button. The audio rung is the only one in this ladder that cannot
+  fail the climb;
+- **the guard stays at the entry.** `AudioSession.StartAsync` still releases orphaned media sessions
+  before opening its own, sparing the video session it is joining (§6). That matters more for audio
+  than for video: an audio session iOS was never told to end is a system-audio capture it has not
+  handed back, and while it stands the phone's own microphone is unavailable to its other apps.
+
+### The jitter buffer, and the delay
+
+The phone produces one frame every ten milliseconds; the endpoint asks for a period's worth whenever
+it feels like it. The queue between them is primed to a **target fill** — `audioDelayMs`, 50 ms by
+default — and that fill *is* the delay setting. Three rules, all of them counted:
+
+- **under-run**: the output asks for samples that are not there. It gets silence, the count goes up
+  by one, and the queue goes back to priming — one longer gap rather than a series of short ones;
+- **drift**: the two clocks are not the same clock, so over minutes one of them wins. Past the target
+  plus three frames (30 ms of margin), the **oldest** frame is dropped and counted. Nothing
+  accumulates without bound;
+- **loss**: a gap in the RTP sequence is filled with that many silent frames, up to 200 ms, so the
+  timeline does not shorten. A frame the decoder refuses is queued all the same — what it holds is
+  the fading tail of the overlap, which is quieter than a click. Skipping instead would play
+  everything after it early, for ever.
+
+Why 50 ms by default: a picture takes about 96 ms from the phone's screen to this one (measured,
+`clock-test`), the sound's path is shorter — no decoder queue, no window to present into — so left
+alone it arrives first. Fifty is roughly the difference. The ear has the last word, which is why it
+is a slider from 0 to 300 ms.
+
+### The output
+
+Shared mode, event-driven, 48 kHz stereo 32-bit float — exactly what the decoder produces — with
+`AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUTOCONVERTPCM | SRC_DEFAULT_QUALITY`. The audio engine does the
+resampling and the remixing to whatever the endpoint runs at, which is why **this project ships no
+resampler**. A driver that refuses those flags is answered by the engine's own mix format, read with
+`GetMixFormat`, said out loud in the log, and accepted only when the samples can be laid out in it —
+a mix format at another sample rate is refused rather than resampled badly.
+
+The endpoint is the one named in the settings, or Windows's default output — **the Console role,
+never Communications**: Windows keeps two defaults and on this project's own test PC the
+communications one is a virtual cable feeding something else. A chosen endpoint that disappears is
+answered by the default one, once, with a line in the journal. Volume and mute are a gain applied to
+the samples on the way out, never the system mixer: that endpoint is shared with everything else on
+the machine.
+
+### What it counts, and where to read it
+
+`AudioStats` — frames received, decoded, failed; packets lost and out of order; under-runs; frames
+skipped; queue fill against its target; the endpoint and format in use; the sound-minus-picture skew.
+Three places read it:
+
+- the **Audio panel**, at four hertz, as one sentence: playing on *device*, buffer *n* ms, and the
+  gap count if there is one;
+- the **journal**, in the counters line — an `AUDIO` block on every line of a `--diagnostic` run and
+  every ten seconds otherwise. That is the one to read after an unattended run;
+- the **probe**, `audio-play`, which replays a capture through this very chain.
+
+### The synchronisation diagnostic
+
+Both streams publish RTCP sender reports carrying the phone's own NTP clock, which is the only clock
+they have in common. Every five seconds the journal gets one line: the sound's total delay (the
+sender report's end-to-end figure, plus the queue, plus the endpoint's own latency) against the
+picture's (its own end-to-end figure, plus the decoder's queue and the decoder). The difference is
+what a listener hears as lip sync, and its sign is the useful half — positive means the sound is
+behind the picture, so the delay should come down.
+
+**It corrects nothing.** The picture's last stage — the window presenting it — is on the
+application's side and is not in the figure, so the skew is measured up to the decoder's output and
+the picture's real delay is that much larger. The measurement is what a later version would need in
+order to replace the fixed delay; this one only writes it down.
+
+### Measured, 10 September 2026
+
+`audio-play … --dry` — the chain in full, the sink pulling on a stopwatch at 48 kHz instead of on a
+driver's event:
+
+| capture | frames | failed | under-runs | skips | queue ms, target 50 (mean/min/max) | CPU | allocation |
+|---|---|---|---|---|---|---|---|
+| synthetic, 200 silent frames | 200 | 0 | 0 | 0 | 50.0 / 50.0 / 50.0 | 3.1 % | **0 B/frame** |
+| `audio_default.rtp`, silent, 12.1 s | 1,211 | 0 | 0 | 0 | 43.5 / 20.0 / 70.0 | 1.4 % | **0 B/frame** |
+| the 30 s music capture | 3,029 | 0 | 0 | 0 | 45.4 / 10.0 / 70.0 | 1.1 % | **0 B/frame** |
+
+The swing in the queue column is the harness, not the chain: both ends of a dry run are paced by
+`Thread.Sleep`, which is worth about a millisecond each way, and forty of those in the same direction
+is the 10 ms minimum on the music capture. Live, the feed is the tunnel's own timing and the pull is
+the endpoint's own event, and both are steadier than that. What the table does prove is the part no
+amount of listening would show: every frame read, nothing dropped, nothing allocated per frame, and
+about one per cent of a core for real-time stereo at 48 kHz.
+
+The continuous integration runs the synthetic capture on every push, with `--delay=150` rather than
+50: a shared runner can stall for longer than a 50 ms cushion, and a test that goes red for the
+runner's scheduling says nothing about the chain.
+
+### Limits
+
+- **No automatic alignment.** See above, and §7.5.
+- **No resampler.** If `AUTOCONVERTPCM` is refused *and* the engine mixes at something other than
+  48 kHz, there is no sound and the log says exactly that. Not seen on this machine: the default
+  output mixes at 48 kHz stereo float, so the samples are copied straight through.
+- **No microphone, no Bluetooth**, here or anywhere else, and neither is coming back: §5 and §9.
+- **The ear has not judged the live stream yet.** The decoder was confirmed by ear on a capture
+  (§10); the chain around it has been measured but not listened to, because the application is not
+  launched from the session that wrote it.

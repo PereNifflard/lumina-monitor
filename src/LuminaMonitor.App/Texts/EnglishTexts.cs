@@ -182,8 +182,27 @@ internal sealed class EnglishTexts : Texts
     public override string PasteFailed(string error) => $"Paste stopped: {error}";
 
     public override string Audio => "Audio";
-    public override string AudioTooltip => "iPhone sound over the cable: coming soon.";
-    public override string AudioComingSoon => "iPhone sound over the cable: coming soon.";
+    public override string AudioTooltip =>
+        "The iPhone's sound, over the cable, on the Windows output you pick. Decoded here — Windows has no " +
+        "AAC-ELD decoder of its own.";
+    public override string AudioSection => "iPhone sound";
+    public override string AudioOutput => "Output";
+    public override string AudioDefaultOutput => "Windows default output";
+    public override string AudioVolume => "Volume";
+    public override string AudioMute => "Mute";
+    public override string AudioDelay => "Delay";
+    public override string AudioDelayHint =>
+        "Holds the sound back to line it up with the picture. Raise it if the sound arrives first.";
+    public override string AudioRetry => "Try again";
+    public override string AudioMilliseconds(double milliseconds) => string.Create(C, $"{milliseconds:0} ms");
+
+    public override string AudioOff => "Sound off — the phone is not asked for any.";
+    public override string AudioNoSession => "No mirror yet: the sound opens with it.";
+    public override string AudioOpening => "Opening the sound stream…";
+    public override string AudioRefused(string reason) => $"No sound: {reason}";
+    public override string AudioRunning(string device, double queuedMs, long underruns) =>
+        string.Create(C, $"Playing on {device}  ·  buffer {queuedMs:0} ms")
+        + (underruns > 0 ? string.Create(C, $"  ·  {underruns} gap(s)") : "");
 
     public override string DimGestureInvalid => "dimGesture needs five numbers — brightness left alone.";
     public override string OpeningControlCentre => "Opening Control Center…";

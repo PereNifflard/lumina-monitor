@@ -29,14 +29,25 @@ internal static class AudioTools
 {
     private const int LockdownPort = 62078;
 
-    /// <summary>The pause the display service wants between two media sessions.</summary>
-    private const int SettleMs = 6000;
+    /// <summary>
+    /// The pause given to the display service before a stream is opened, and
+    /// between the video stream and the audio stream that joins it.
+    /// </summary>
+    /// <remarks>
+    /// None by default. Six seconds is what the first successful runs used, not
+    /// what the daemon was shown to need: on 11 September 2026
+    /// <c>--settle=0</c> had the phone accept the audio offer the moment the video
+    /// stream was in place, and the application no longer waits either. The
+    /// option stays so that the pause can be measured again on another phone.
+    /// </remarks>
+    public const int DefaultSettleMs = 0;
 
     /// <summary>The offer variants <c>audio-info</c> understands.</summary>
     public const string VariantUsage =
         "  variantes : default | f4:<n> | f2:<n> | f3:<n> | f5:<n> | f6:<n>\n"
         + "              paliers-sans-codec | paliers-codec-seuls\n"
         + "  options   : --video (video et audio dans la meme session, comme Xcode)\n"
+        + "              --settle=<ms> (pause avant chaque flux, defaut 0)\n"
         + "              --direction=<output|input>  (input : ce que le telephone repond au micro)";
 
     public static bool ParseVariant(string text, out AudioOfferOptions options, out string label)
@@ -151,18 +162,19 @@ internal static class AudioTools
     }
 
     /// <summary>
-    /// audio-info [secondes] [capture.rtp] [--variant=…] [--video] [--direction=…]
+    /// audio-info [secondes] [capture.rtp] [--variant=…] [--video] [--settle=…] [--direction=…]
     /// — ouvre un flux audio et rapporte tout ce que le telephone en dit.
     /// </summary>
     public static async Task<int> RunAsync(int seconds, string? capturePath, string variant, bool withVideo,
-        string direction, string ddiFolder, Action<string> say)
+        string direction, int settleMs, string ddiFolder, Action<string> say)
     {
         if (!ParseVariant(variant, out var offer, out string label))
         {
-            say($"usage : audio-info [secondes] [capture.rtp] [--variant=<variante>] [--video] [--direction=<output|input>]"
+            say($"usage : audio-info [secondes] [capture.rtp] [--variant=<variante>] [--video] [--settle=<ms>] [--direction=<output|input>]"
                 + $"{Environment.NewLine}{VariantUsage}");
             return 2;
         }
+        say($"Pause avant chaque flux : {settleMs} ms.");
 
         AudioOffer.SelfCheck();
         say("Blob audio par defaut identique au gabarit Xcode (SelfCheck OK).");
@@ -187,7 +199,7 @@ internal static class AudioTools
         {
             if (withVideo)
             {
-                await Task.Delay(SettleMs);
+                await Task.Delay(settleMs);
                 video = new MediaSession(climb.Net, climb.Rsd) { Codecs = VideoCodecs.AvcOnly };
                 say("Ouverture du flux video d'abord, comme le miroir de Xcode…");
                 try
@@ -209,7 +221,7 @@ internal static class AudioTools
                 say($"Flux video en place, session client {Convert.ToHexString(video.SessionId.Bytes)} — l'audio va la partager.");
             }
 
-            await Task.Delay(SettleMs);
+            await Task.Delay(settleMs);
             audio = new AudioSession(climb.Net, climb.Rsd)
             {
                 Offer = offer,
@@ -528,7 +540,18 @@ internal static class AudioTools
     /// </remarks>
     private static async Task<Climb?> ClimbAsync(string ddiFolder, Action<string> say, ConsoleLog log)
     {
-        var mux = await UsbmuxClient.ConnectAsync();
+        UsbmuxClient mux;
+        try
+        {
+            mux = await UsbmuxClient.ConnectAsync();
+        }
+        catch (LuminaException exception)
+        {
+            // The multiplexer's two ways of being out of reach are told apart in
+            // the message itself; a stack trace on top of it says nothing more.
+            say($"*** MULTIPLEXEUR APPLE *** {exception.Message}");
+            return null;
+        }
         var lockdownPipe = await UsbmuxClient.ConnectAsync();
         UsbmuxClient? servicePipe = null;
         TunnelNet? net = null;

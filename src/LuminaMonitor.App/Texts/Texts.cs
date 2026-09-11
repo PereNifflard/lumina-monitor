@@ -200,14 +200,29 @@ internal abstract class Texts
     public abstract string PasteFailed(string error);
 
     // --- Audio panel ------------------------------------------------------------------------------
-    // The command bar's Audio button and the panel it opens. Empty for now: the
-    // Bluetooth path (phone sound, PC microphone for calls) is gone — see
-    // docs/AUDIO.md, "Decision, September 10 2026" — and the cable path it will
-    // be replaced by isn't written yet.
+    // The command bar's Audio button and the panel it opens: the phone's sound
+    // over the cable, on the Windows output of one's choice. No microphone and no
+    // Bluetooth anywhere in it, and neither is coming back — docs/AUDIO.md §5 and
+    // "Decision, September 10 2026".
 
     public abstract string Audio { get; }
     public abstract string AudioTooltip { get; }
-    public abstract string AudioComingSoon { get; }
+    public abstract string AudioSection { get; }
+    public abstract string AudioOutput { get; }
+    public abstract string AudioDefaultOutput { get; }
+    public abstract string AudioVolume { get; }
+    public abstract string AudioMute { get; }
+    public abstract string AudioDelay { get; }
+    public abstract string AudioDelayHint { get; }
+    public abstract string AudioRetry { get; }
+    public abstract string AudioMilliseconds(double milliseconds);
+
+    // The status line, one arm per thing that can be true of the sound.
+    public abstract string AudioOff { get; }
+    public abstract string AudioNoSession { get; }
+    public abstract string AudioOpening { get; }
+    public abstract string AudioRefused(string reason);
+    public abstract string AudioRunning(string device, double queuedMs, long underruns);
 
     // --- Brightness -------------------------------------------------------------------------------
 

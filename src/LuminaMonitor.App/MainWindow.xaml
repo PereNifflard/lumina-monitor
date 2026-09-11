@@ -386,8 +386,8 @@
 
                 <Rectangle Width="1" Fill="{StaticResource GlassBorder}" Margin="5,8" />
 
-                <!-- Le son de l'iPhone par le cable, bientot : la place est
-                     prete, le panneau n'a pour l'instant qu'un mot. -->
+                <!-- Le son de l'iPhone, par le cable, sur la sortie Windows de
+                     son choix. Le panneau est juste au-dessus. -->
                 <Button x:Name="AudioButton" Style="{StaticResource BarButton}"
                         Click="OnAudioClicked">
                     <StackPanel Orientation="Horizontal">
@@ -405,9 +405,12 @@
              ne peut pas deriver d'un ecran a l'autre. Pose au-dessus de la
              barre, pres du bouton qui l'ouvre ; ferme par un clic ailleurs,
              Echap ou le bouton. Tant qu'il est ouvert, la souris ne prend pas
-             le telephone (voir OnMouseMove). Vide pour l'instant : le son par
-             le cable n'est pas encore ecrit (voir docs/AUDIO.md) ; le seul mot
-             ci-dessous est pose par ApplyAudioTexts. -->
+             le telephone (voir OnMouseMove).
+
+             Le son du telephone par le cable : interrupteur, sortie Windows,
+             volume, sourdine, retard. Ni micro ni Bluetooth, et il n'y en aura
+             pas — docs/AUDIO.md §5. Aucun texte ici : tout est pose par
+             ApplyAudioTexts. -->
         <Border x:Name="AudioPanel" Grid.Row="1" Visibility="Collapsed"
                 HorizontalAlignment="Center" VerticalAlignment="Bottom"
                 Margin="12,0,12,6" MaxWidth="400" CornerRadius="16" Padding="18,14,18,16"
@@ -415,8 +418,67 @@
             <!-- Pas d'ombre portee : un effet sur un element pose sur la video
                  se recompose a chaque image. Le liseré, plus marque que le
                  verre ordinaire, detache le panneau a lui seul. -->
-            <TextBlock x:Name="AudioComingSoon" FontSize="12.5" LineHeight="18" TextWrapping="Wrap"
-                       Foreground="{StaticResource OnSurface}" />
+            <StackPanel>
+                <Grid>
+                    <TextBlock x:Name="AudioSectionLabel" FontSize="13" FontWeight="Medium"
+                               VerticalAlignment="Center" Foreground="{StaticResource OnSurface}" />
+                    <CheckBox x:Name="AudioEnabledSwitch" Style="{StaticResource ToggleSwitch}"
+                              HorizontalAlignment="Right"
+                              Checked="OnAudioEnabledChanged" Unchecked="OnAudioEnabledChanged" />
+                </Grid>
+
+                <TextBlock x:Name="AudioOutputLabel" Margin="0,15,0,5" FontSize="11.5"
+                           Foreground="{StaticResource OnSurfaceVariant}" />
+                <!-- Pas de DisplayMemberPath : les entrees se presentent
+                     elles-memes (AudioChoice.ToString), ce qui evite de faire
+                     reflechir le moteur de liaison sur un type prive. -->
+                <ComboBox x:Name="AudioOutputBox" Style="{StaticResource PanelCombo}"
+                          SelectionChanged="OnAudioOutputChanged" />
+
+                <Grid Margin="0,15,0,3">
+                    <TextBlock x:Name="AudioVolumeLabel" FontSize="11.5" VerticalAlignment="Center"
+                               Foreground="{StaticResource OnSurfaceVariant}" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <TextBlock x:Name="AudioMuteLabel" Margin="0,0,8,0" FontSize="11.5"
+                                   VerticalAlignment="Center" Foreground="{StaticResource OnSurfaceVariant}" />
+                        <CheckBox x:Name="AudioMuteSwitch" Style="{StaticResource ToggleSwitch}"
+                                  Checked="OnAudioMuteChanged" Unchecked="OnAudioMuteChanged" />
+                        <TextBlock x:Name="AudioVolumeValue" Margin="12,0,0,0" MinWidth="38" FontSize="11.5"
+                                   TextAlignment="Right" VerticalAlignment="Center"
+                                   Foreground="{StaticResource OnSurface}" />
+                    </StackPanel>
+                </Grid>
+                <Slider x:Name="AudioVolumeSlider" Style="{StaticResource PanelSlider}"
+                        Minimum="0" Maximum="100" SmallChange="1" LargeChange="10"
+                        ValueChanged="OnAudioVolumeChanged" />
+
+                <Grid Margin="0,12,0,3">
+                    <TextBlock x:Name="AudioDelayLabel" FontSize="11.5"
+                               Foreground="{StaticResource OnSurfaceVariant}" />
+                    <TextBlock x:Name="AudioDelayValue" HorizontalAlignment="Right" FontSize="11.5"
+                               Foreground="{StaticResource OnSurface}" />
+                </Grid>
+                <Slider x:Name="AudioDelaySlider" Style="{StaticResource PanelSlider}"
+                        Minimum="0" Maximum="300" SmallChange="5" LargeChange="25"
+                        TickFrequency="5" IsSnapToTickEnabled="True"
+                        ValueChanged="OnAudioDelayChanged" />
+                <TextBlock x:Name="AudioDelayNote" Margin="0,5,0,0" FontSize="11" LineHeight="16"
+                           TextWrapping="Wrap" Foreground="{StaticResource Outline}" />
+
+                <Rectangle Height="1" Fill="{StaticResource GlassBorder}" Margin="0,15,0,11" />
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="AudioStatus" Grid.Column="0" Margin="0,0,10,0" FontSize="11.5"
+                               LineHeight="17" TextWrapping="Wrap" VerticalAlignment="Center"
+                               Foreground="{StaticResource OnSurfaceVariant}" />
+                    <Button x:Name="AudioRetryButton" Grid.Column="1" Style="{StaticResource PanelButton}"
+                            VerticalAlignment="Top" Visibility="Collapsed" Click="OnAudioRetryClicked" />
+                </Grid>
+            </StackPanel>
         </Border>
     </Grid>
 </Window>

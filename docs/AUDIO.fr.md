@@ -157,6 +157,11 @@ et parcours de la syntaxe jusqu'à consommer exactement chaque AU sans erreur �
 capture, sans produire un son ; (2) quantification inverse et MDCT, vérifiées sur une trame de
 silence dont on connaît la sortie (zéro) ; (3) le reste, à l'oreille.
 
+> **Correction, 10 septembre 2026, le soir même.** L'estimation ci-dessus était fausse sur les deux
+> chiffres. Une fois les tables de `docs/AAC_ELD_TABLES.fr.md` réunies, le décodeur lui-même a été
+> écrit d'une traite : environ 1 900 lignes, pas 3 000 à 5 000, et il existe le jour même plutôt
+> qu'en deux à quatre semaines. Voir le § 10, « Le décodeur maison », plus bas.
+
 **b) Un codec de rechange.** Écarté par la mesure du § 1 : l'offre n'a pas de banque, et le seul
 levier existant (`f4`) ne change pas le choix du téléphone.
 
@@ -271,17 +276,22 @@ Déconnecter) ; s'il revient, la cause est là.
 
 ## 7. Ce qui reste à mesurer
 
-1. **Le son réel** : `audio-info 10 son.rtp` avec une musique qui joue sur le téléphone (débit, taille
-   des trames, contenu des charges utiles).
-2. **Audio et vidéo dans la même session**, avec le même `avcMediaStreamOptionClientSessionID`, comme
-   le miroir de Xcode : `audio-info 5 --video`. Le code est écrit et la garde épargne la session
-   vidéo ; les trois essais du 9 septembre sont tombés sur un service d'affichage devenu muet
-   (« pas de SETTINGS du téléphone en 3 s »), dont le remède connu — démonter l'image développeur —
-   exige un téléphone **déverrouillé**, ce qu'il n'était plus.
+1. ~~**Le son réel**~~ — **mesuré le 10 septembre 2026 à 20 h 40.** Trente secondes capturées avec une
+   vidéo qui jouait sur le téléphone : 3 029 trames, 372 octets par trame en moyenne, 0,30 Mbit/s,
+   101 paquets/s, aucune perte. Décodé en entier et écouté ; les nombres sont au §10.
+2. ~~**Audio et vidéo dans la même session**~~ — **prouvé le 10 septembre 2026 à 21 h 12.**
+   `audio-info 5 --video` : le flux vidéo ouvert d'abord, comme le miroir de Xcode, puis le flux
+   audio avec `PairedSessionId = video.SessionId` — le même
+   `avcMediaStreamOptionClientSessionID` pour les deux — **503 paquets audio en 5 s, aucune perte**,
+   et les deux flux fermés proprement, le téléphone raccrochant sur chaque service. Cet ordre est
+   désormais celui de `DeviceSession` ; voir §11.
 3. Les variantes de paliers (`paliers-sans-codec`, `paliers-codec-seuls`), pour finir d'éliminer la
    table de paliers comme lieu du choix de codec.
 4. Un flux **vidéo** laissé orphelin gêne-t-il aussi le micro ? C'est la seule hypothèse qui
    expliquerait le symptôme avant l'existence du chemin audio.
+5. **Le retard n'est pas aligné automatiquement.** Le §11 mesure l'écart entre le son et l'image
+   toutes les cinq secondes et n'en fait rien. Ce qui manque pour fermer la boucle n'est pas la
+   mesure mais la décision : à quelle vitesse déplacer un retard sans que le déplacement s'entende.
 
 ## 8. Les commandes
 
@@ -291,6 +301,8 @@ LuminaMonitor.UsbProbe audio-info [sec] [capture.rtp] [--variant=…] [--video] 
 LuminaMonitor.UsbProbe media-status [sec]               # ce que le téléphone croit en cours
 LuminaMonitor.UsbProbe media-release                    # ferme les sessions orphelines
 LuminaMonitor.UsbProbe audio-leak-test                  # ouvre un flux et ne le ferme PAS (mesure)
+LuminaMonitor.UsbProbe audio-play <capture.rtp|--silence[=trames]> [--device=<id|default>] [--delay=<ms>] [--dry]
+LuminaMonitor.UsbProbe audio-devices                    # hors ligne : les sorties Windows et leur format de mixage
 ```
 
 Variantes de `audio-info` : `default`, `f2:<n>`, `f3:<n>`, `f4:<n>`, `f5:<n>`, `f6:<n>`,
@@ -311,3 +323,294 @@ n'y change rien : le § 5 montrait déjà que le téléphone n'annonce aucune ca
 CoreDevice (`direction : "input"` est acceptée et renvoyée telle quelle mais ne change rien ;
 `getmediasupportinfo` ne liste aucune fonction de capture), et cela restait vrai avant cette
 décision comme après elle.
+
+(Suite le soir même : § 10, « Le décodeur maison », plus bas.)
+
+## 10. Le décodeur maison
+
+Écrit le soir même de la décision ci-dessus, une fois les tables de
+[`docs/AAC_ELD_TABLES.fr.md`](AAC_ELD_TABLES.fr.md) réunies : environ 1 900 lignes sur 14 fichiers
+dans `src/LuminaMonitor.Core/Media/Aac/`, aucun paquet référencé, rien de FFmpeg, FDK-AAC ou faad2
+consulté. Cette section note ce qu'il fait, ce qu'il ne fait pas, ce qui a été mesuré, et ce qui
+n'est pas encore tranché.
+
+### Le rôle de chaque fichier
+
+| Fichier | Rôle |
+|---|---|
+| `BitReader.cs` | lecteur de bits MSB-first sans copie, plus `AacBitstreamException` (une raison et une position en bits) |
+| `AudioSpecificConfig.cs` | l'ASC et l'`ELDSpecificConfig`, chaîne d'extensions comprise, avec `Validate()` |
+| `Huffman.cs` | les douze livres, en arbres binaires |
+| `SectionData.cs` | la variante ER : `sect_len_incr` sur cinq bits, échappement à 31 |
+| `ScaleFactors.cs` | les trois chaînes — facteurs d'échelle, énergie de bruit, position d'intensité |
+| `TnsData.cs` | les données du filtre TNS |
+| `SpectralData.cs` | quadruplets et paires, signes puis échappement du livre 11 |
+| `Dequantizer.cs` | `|q|^(4/3)` et `2^(0,25·(sf−100))`, tabulés |
+| `Tns.cs` | le filtre tout-pôle |
+| `Stereo.cs` | M/S et intensité |
+| `Pns.cs` | bruit à énergie unité, corrélation gauche/droite |
+| `EldFilterBank.cs` | le banc de filtres de synthèse basse latence, replié sur une DCT-IV, recouvrement des trois blocs précédents |
+| `EldSyntax.cs` | la séquence d'éléments sans identifiants — CPE/SCE |
+| `AacEldDecoder.cs` | l'API publique et les compteurs |
+
+Non implémenté, chacun refusé avec un motif typé plutôt qu'ignoré en silence : SBR basse latence,
+extensions ELD (SAOC, MPEG Surround), résilience HCR/RVLC, plus de deux canaux. Aucune allocation
+par trame en régime établi — voir les mesures plus bas.
+
+### L'API
+
+```csharp
+var decoder = new AacEldDecoder(audioSpecificConfig);
+bool ok = decoder.Decode(accessUnit, pcmInterleaved, out int samplesPerChannel);
+```
+
+`Decode(ReadOnlySpan<byte> accessUnit, Span<float> pcmInterleaved, out int samplesPerChannel)`
+décode une unité d'accès en PCM flottant entrelacé à pleine échelle ±1. Elle renvoie `false` sur une
+trame qu'elle n'a pas pu lire plutôt que de lever une exception, pour qu'un appelant sur un flux en
+direct passe à la trame suivante ; les compteurs disent pourquoi et combien :
+
+- `FramesDecoded`, `FramesFailed`
+- `BitsConsumed`, `BitsAvailable` — la longueur de syntaxe de la dernière trame contre ce qui lui a
+  été donné
+- `PaddingIsZero` — si tout ce qui suit la syntaxe était le bourrage nul sur lequel une trame bien
+  formée se termine
+- `LastFailure` — l'`AacBitstreamException` de la dernière trame refusée, ou nul
+
+### Les commandes de la sonde
+
+```
+LuminaMonitor.UsbProbe aac-selftest-decode
+LuminaMonitor.UsbProbe decode-audio <capture.rtp> <sortie.wav> [--frame=480|512]
+```
+
+`aac-selftest-decode` fait tourner 18 contrôles hors ligne, sans téléphone : la trame silencieuse du
+téléphone (`00 68 34 00`) contre son nombre de bits connu et sa sortie tout à zéro ; des trames
+construites à la main avec des valeurs spectrales connues par canal, vérifiées contre un banc de
+filtres nourri du même spectre directement ; une trame tronquée, qui doit être refusée au bit où
+elle s'arrête ; aucune allocation sur 1 000 trames ; 800 trames légales aléatoires qui font passer
+tous les livres, la substitution de bruit, la stéréo d'intensité et le TNS.
+
+`decode-audio` rejoue une capture à travers le décodeur de bout en bout et écrit un fichier WAV —
+48 kHz, stéréo, 16 bits, l'en-tête RIFF de 44 octets écrit à la main, sans bibliothèque — en mesurant
+ce qui ne se voit pas à l'écoute : bits consommés par trame, continuité aux jointures de trames, RMS
+et pic, échantillons non finis, temps de décodage.
+
+### Ce qui a été mesuré, le 10 septembre 2026
+
+- **`aac-tables-selftest` : 28/28.** Reconstruction parfaite du banc de filtres, résidu maximal
+  1,3e-8 (voir `docs/AAC_ELD_TABLES.fr.md` § 4).
+- **`aac-selftest-decode` : 18/18.** La trame silencieuse consomme 26 de ses 32 bits, bourrage nul,
+  et produit 480×2 puis 512×2 échantillons nuls ; les trames construites en 480 et en 512 relisent
+  exactement ce qui a été écrit, avec un écart ≤ 1,5e-8 contre la pleine échelle (32768) sur six
+  trames consécutives ; 800 trames légales aléatoires : 0 désaccord de bits, 0 échantillon non fini,
+  0,16–0,19 ms par trame.
+- **La capture silencieuse `audio_default.rtp`** (1 211 trames, type de charge utile 101) :
+  1 211/1 211 décodées, 26,0 bits par trame, 0 trame finissant trop tôt, trop tard, ou sur un
+  bourrage non nul, sortie strictement nulle, 0,145 ms par trame contre un budget de 10 ms.
+- **Une capture réelle avec musique** (30 s, 10 septembre 2026, 20h40, une vidéo qui joue sur le
+  téléphone) : 3 029 trames, 372 octets par trame en moyenne, 0,30 Mbit/s, 101 paquets/s, aucune
+  perte. Décodée en **480** : 3 029/3 029 décodées, 0 échec, 8 804 260 bits utilisés sur 8 814 776
+  (99,9 %), 2 906,7 bits/trame en moyenne, 0 trame finissant trop tôt, trop tard, ou sur un bourrage
+  non nul, pic +3,4 dBFS (238 échantillons écrêtés sur 2 907 840, 0,008 % — un dépassement normal sur
+  les transitoires), RMS −16,2 dBFS, 0 valeur non finie, continuité aux jointures 1,398e-2 contre
+  1,374e-2 ailleurs (rapport 1,017, donc pas de clic aux frontières de trames), 0,140 ms par trame en
+  moyenne, 0,825 ms au pire. Décodée en **512** : 63 décodées, 2 966 échouées, premier échec à la
+  trame 1 (« une section réclame 8 bandes depuis la bande 26, au-delà du `max_sfb` 34 ») — détail
+  complet et conclusion (480) dans [`docs/AAC_ELD_TABLES.fr.md`](AAC_ELD_TABLES.fr.md) § 5.
+
+Cela prouve que le lecteur de bits est exact : une erreur de syntaxe ferait finir une trame ailleurs
+que sur son bourrage, ce qu'on observe exactement sur la passe 512 et jamais sur la passe 480, sur
+3 029 trames. Cela ne prouve pas encore que la convention de phase du banc de filtres est celle
+qu'a utilisée l'encodeur d'Apple — seule l'écoute de la sortie décodée le dit.
+
+### Choix faits faute de certitude
+
+Sept endroits où le texte du logiciel de référence ne suffisait pas seul, et où un choix a dû être
+fait et noté plutôt que laissé implicite :
+
+1. **Les longueurs TNS** sont comptées depuis le nombre total de bandes, puis bornées à
+   `min(max_sfb, plafond)` — d'après `get_tns()` dans `huffdec2.c` et `tns.c` du logiciel de
+   référence.
+2. **L'échelle de sortie est ±1** via une constante `FullScale = 32768` ; le décodeur de référence
+   écrit `time_sample_vector` tel quel en entiers 16 bits, sans mise à l'échelle propre.
+3. **480 échantillons par trame par défaut**, malgré un `frameLengthFlag = 0` qui signifie 512 dans
+   le logiciel de référence. Le pas d'horodatage RTP de la capture silencieuse (exactement 480 à
+   chaque paquet) pointait déjà vers 480 ; celui de la capture réelle est moins net, mais la décoder
+   tranche directement la question — le 480 passe de bout en bout, le 512 échoue dès la trame 1
+   (§ 5 de `docs/AAC_ELD_TABLES.fr.md`).
+4. **Une trame avec une valeur hors bornes est refusée, pas écrêtée** — le logiciel de référence ne
+   tolère cela que sous ses drapeaux de protection d'erreur, à 0 ici.
+5. **Le recouvrement d'une trame en échec est vidé (`Flush`), pas remis à zéro**, pour que la queue
+   s'éteigne au lieu de claquer.
+6. **`tns_data` est lu juste après son propre drapeau**, résilience à 0 et rien entre les deux.
+7. **L'énergie PNS est `2^(0,25·énergie)` sur un bruit à énergie unité** issu d'un générateur
+   congruentiel, avec la corrélation gauche/droite respectée.
+
+### Limites
+
+Pas de SBR basse latence, pas d'extensions ELD, pas de résilience HCR/RVLC, pas plus de deux
+canaux — chacun refusé avec un motif typé plutôt que mal géré en silence. Aucun vecteur de
+conformité au bit près n'existe pour comparer (l'ISO les vend séparément) ; les auto-tests prouvent
+la cohérence interne et une consommation de bits exacte, pas une correspondance échantillon par
+échantillon contre un décodeur de référence, faute d'en avoir un sur cette machine.
+
+### État
+
+**Confirmé à l'oreille le 10 septembre 2026.** La capture de 30 secondes, décodée avec les tables
+de 480 échantillons et copiée dans un WAV, a été écoutée en regard de la vidéo qui jouait sur le
+téléphone : même musique, aucun bruit, niveau normal. Les nombres ci-dessus (consommation de bits
+exacte, pas d'écrêtage au-delà des transitoires normaux, pas de clic aux frontières de trames, pas
+d'échantillon non fini) étaient nécessaires ; l'oreille était le test suffisant, et la convention
+de phase du banc de filtres est bien celle de l'encodeur d'Apple. Prochaine étape : le rendu dans
+l'app — une sortie WASAPI à choisir, le volume, et la synchronisation avec l'image.
+
+## 11. Dans l'app
+
+Écrit le 10 septembre 2026, le même soir que le décodeur, une fois répondues les deux premières
+questions du §7. Cette section décrit du code, pas un projet : la chaîne tourne, les auto-tests la
+mesurent, et la seule chose qui lui manque encore est une oreille sur le flux en direct.
+
+### La chaîne, de bout en bout
+
+```
+téléphone ─ RTP/UDP dans le tunnel ─▶ AudioSession ─▶ AudioRenderer ─▶ AudioJitterBuffer ─▶ WasapiOutput ─▶ sortie
+            une unité d'accès/paquet   RR RTCP 1/s     démux, séquence,   remplissage cible,   mode partagé,
+            PT 101, +480 ts, 10 ms     BYE à l'arrêt   décodage AAC-ELD   saut / silence       événementiel
+```
+
+Six fichiers dans `src/LuminaMonitor.Core/Audio/` et un dans `Media/`, chacun avec un seul rôle :
+
+| Fichier | Rôle |
+|---|---|
+| `Media/AudioStream.cs` | la session et la chaîne ensemble, plus le diagnostic de synchro |
+| `Audio/AudioRenderer.cs` | la chaîne en un objet : démux, pertes, décodage, file — partagé avec la sonde |
+| `Audio/AudioJitterBuffer.cs` | l'anneau de trames entre l'horloge du téléphone et celle de la carte son |
+| `Audio/WasapiOutput.cs` | un flux de rendu en mode partagé, mené par l'événement du périphérique |
+| `Audio/AudioSink.cs` | l'interface de sortie, et la sortie à sec qui n'ouvre aucun périphérique |
+| `Audio/AudioFormat.cs` | le `WAVEFORMATEX` à la main, et la seule conversion que ce projet fait lui-même |
+| `Audio/AudioOptions.cs`, `AudioStats.cs` | ce qu'on décide, et ce que la chaîne a compté |
+
+### Sa place dans l'échelle
+
+`DeviceSession` ouvre le son **après** l'image et **rattaché à elle** — l'offre audio porte
+l'identifiant de session client du flux vidéo, ce que le §7.2 a prouvé fonctionnel. Trois propriétés
+de cet ordre sont voulues :
+
+- **le miroir est annoncé ouvert d'abord.** Le son s'ouvre sur une tâche à lui, dès que l'image est
+  en place. La première version attendait six secondes (`AudioSettleMs`), en copiant la pause
+  qu'`audio-info --video` avait utilisée dans l'essai qui a prouvé que les deux flux pouvaient
+  partager une session ; le 11 septembre 2026, `audio-info --video --settle=0` a montré le téléphone
+  acceptant l'offre audio sans aucune pause (400 paquets en quatre secondes, les deux flux fermés
+  proprement), et avec une seconde. Les refus connus du service d'affichage sont entre deux
+  *sessions* ; un second flux qui rejoint celle déjà ouverte n'en est pas une. La constante reste, à
+  zéro, pour qu'une attente ait un nom si un téléphone en exigeait une un jour. Personne n'attend un
+  son ; tout le monde attend une image ;
+- **un refus n'est pas fatal.** L'image reste, le panneau dit pourquoi, et `OpenAudioAsync` peut être
+  rappelé depuis le bouton du panneau. Le barreau audio est le seul de cette échelle qui ne peut pas
+  faire échouer la montée ;
+- **la garde reste à l'entrée.** `AudioSession.StartAsync` libère toujours les sessions média
+  orphelines avant d'ouvrir la sienne, en épargnant la session vidéo qu'elle rejoint (§6). Cela compte
+  plus pour l'audio que pour la vidéo : une session audio qu'iOS n'a jamais eu l'ordre de terminer est
+  une capture du son système qu'il n'a pas rendue, et tant qu'elle tient, le micro du téléphone est
+  indisponible pour ses autres apps.
+
+### Le tampon de gigue, et le retard
+
+Le téléphone produit une trame toutes les dix millisecondes ; le périphérique réclame une période
+quand ça lui convient. La file entre les deux est amorcée jusqu'à un **remplissage cible** —
+`audioDelayMs`, 50 ms par défaut — et ce remplissage *est* le réglage de retard. Trois règles, toutes
+comptées :
+
+- **sous-alimentation** : la sortie réclame des échantillons qui ne sont pas là. Elle reçoit du
+  silence, le compteur avance d'un, et la file repart en amorçage — un trou plus long plutôt qu'une
+  série de courts ;
+- **dérive** : les deux horloges ne sont pas la même, donc au bout de quelques minutes l'une gagne.
+  Au-delà de la cible plus trois trames (30 ms de marge), la trame **la plus ancienne** est jetée et
+  comptée. Rien ne s'accumule sans borne ;
+- **perte** : un trou dans les numéros de séquence RTP est comblé par autant de trames silencieuses,
+  jusqu'à 200 ms, pour que la ligne du temps ne raccourcisse pas. Une trame que le décodeur refuse est
+  mise en file quand même — ce qu'elle contient est la queue du recouvrement qui s'éteint, plus
+  discrète qu'un clic. Sauter, à l'inverse, jouerait tout ce qui suit en avance, définitivement.
+
+Pourquoi 50 ms par défaut : une image met environ 96 ms de l'écran du téléphone à celui-ci (mesuré,
+`clock-test`), le chemin du son est plus court — pas de file de décodeur, pas de fenêtre où présenter
+— donc laissé seul il arrive avant. Cinquante, c'est à peu près la différence. L'oreille a le dernier
+mot, et c'est pourquoi c'est un curseur de 0 à 300 ms.
+
+### La sortie
+
+Mode partagé, événementiel, 48 kHz stéréo flottant 32 bits — exactement ce que produit le décodeur —
+avec `AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUTOCONVERTPCM | SRC_DEFAULT_QUALITY`. Le moteur audio fait
+lui-même le rééchantillonnage et le remixage vers ce que tourne le périphérique, et c'est pourquoi **ce
+projet n'embarque aucun rééchantillonneur**. Un pilote qui refuse ces drapeaux se voit répondre par le
+format de mixage du moteur, lu avec `GetMixFormat`, annoncé dans le journal, et accepté seulement si
+les échantillons peuvent s'y poser — un format de mixage à une autre fréquence est refusé plutôt que
+mal rééchantillonné.
+
+Le périphérique est celui nommé dans les réglages, ou la sortie par défaut de Windows — **le rôle
+Console, jamais Communications** : Windows garde deux défauts et, sur le PC d'essai de ce projet, celui
+des communications est un câble virtuel qui alimente autre chose. Un périphérique choisi qui disparaît
+se voit remplacé par le défaut, une fois, avec une ligne au journal. Volume et sourdine sont un gain
+appliqué aux échantillons à la sortie, jamais le mélangeur système : ce périphérique est partagé avec
+tout le reste de la machine.
+
+### Ce qu'elle compte, et où le lire
+
+`AudioStats` — trames reçues, décodées, en échec ; paquets perdus et en désordre ;
+sous-alimentations ; trames sautées ; remplissage de la file face à sa cible ; périphérique et format
+actifs ; l'écart son-image. Trois endroits le lisent :
+
+- le **panneau Audio**, à quatre hertz, en une phrase : lecture sur *périphérique*, file *n* ms, et le
+  nombre de coupures s'il y en a ;
+- le **journal**, dans la ligne de compteurs — un bloc `AUDIO` à chaque ligne d'une exécution
+  `--diagnostic`, et toutes les dix secondes sinon. C'est celui qu'on lit après une séance sans
+  témoin ;
+- la **sonde**, `audio-play`, qui rejoue une capture à travers cette chaîne même.
+
+### Le diagnostic de synchro
+
+Les deux flux publient des rapports d'émetteur RTCP portant l'horloge NTP du téléphone, la seule qu'ils
+aient en commun. Toutes les cinq secondes, une ligne au journal : le retard total du son (le délai de
+bout en bout du rapport d'émetteur, plus la file, plus la latence annoncée du périphérique) face à
+celui de l'image (son propre délai de bout en bout, plus la file du décodeur et le décodeur). La
+différence est ce qu'un auditeur entend comme synchro labiale, et c'est son signe qui sert — positif
+veut dire que le son est derrière l'image, donc que le retard doit baisser.
+
+**Elle ne corrige rien.** Le dernier étage de l'image — la fenêtre qui l'affiche — est du côté de
+l'application et n'entre pas dans le chiffre : l'écart est donc mesuré jusqu'à la sortie du décodeur, et
+le retard réel de l'image est d'autant plus grand. La mesure est ce dont une version ultérieure aurait
+besoin pour remplacer le retard fixe ; celle-ci se contente de l'écrire.
+
+### Mesuré le 10 septembre 2026
+
+`audio-play … --dry` — la chaîne entière, la sortie tirant sur un chronomètre à 48 kHz au lieu de
+l'événement d'un pilote :
+
+| capture | trames | échecs | sous-alim. | sauts | file en ms, cible 50 (moy/min/max) | CPU | allocation |
+|---|---|---|---|---|---|---|---|
+| synthétique, 200 trames silencieuses | 200 | 0 | 0 | 0 | 50,0 / 50,0 / 50,0 | 3,1 % | **0 o/trame** |
+| `audio_default.rtp`, silencieuse, 12,1 s | 1 211 | 0 | 0 | 0 | 43,5 / 20,0 / 70,0 | 1,4 % | **0 o/trame** |
+| la capture musicale de 30 s | 3 029 | 0 | 0 | 0 | 45,4 / 10,0 / 70,0 | 1,1 % | **0 o/trame** |
+
+L'amplitude de la colonne « file » vient du banc d'essai, pas de la chaîne : les deux bouts d'une
+exécution à sec sont cadencés par `Thread.Sleep`, ce qui vaut environ une milliseconde de chaque côté,
+et quarante de ces millisecondes dans le même sens font le minimum de 10 ms de la capture musicale. En
+direct, l'alimentation est le rythme propre du tunnel et la lecture l'événement propre du périphérique,
+tous deux plus réguliers. Ce que le tableau prouve, en revanche, est la part qu'aucune écoute ne
+montrerait : chaque trame lue, rien de jeté, rien d'alloué par trame, et environ un pour cent d'un cœur
+pour du stéréo 48 kHz en temps réel.
+
+L'intégration continue joue la capture synthétique à chaque poussée, avec `--delay=150` plutôt que 50 :
+un runner partagé peut se figer plus longtemps qu'un coussin de 50 ms, et un test qui passe au rouge
+pour l'ordonnancement du runner ne dit rien de la chaîne.
+
+### Limites
+
+- **Aucun alignement automatique.** Voir plus haut, et §7.5.
+- **Aucun rééchantillonneur.** Si `AUTOCONVERTPCM` est refusé *et* que le moteur mélange ailleurs qu'à
+  48 kHz, il n'y a pas de son et le journal le dit exactement. Jamais vu sur cette machine : la sortie
+  par défaut mélange en 48 kHz stéréo flottant, les échantillons sont donc copiés tels quels.
+- **Ni micro ni Bluetooth**, ici ni ailleurs, et ni l'un ni l'autre ne revient : §5 et §9.
+- **L'oreille n'a pas encore jugé le flux en direct.** Le décodeur a été confirmé à l'oreille sur une
+  capture (§10) ; la chaîne autour de lui a été mesurée mais pas écoutée, parce que l'application n'est
+  pas lancée par la session qui l'a écrite.

@@ -21,7 +21,8 @@ namespace LuminaMonitor.App;
 /// Bluetooth audio switches, dropped September 10 2026 (see docs/AUDIO.md).
 /// <c>JsonSerializer.Deserialize</c> ignores unknown properties by default,
 /// so such a file still loads without error; those keys are simply never
-/// written back.</para>
+/// written back. The sound that came back over the cable has its own four keys
+/// below, and none of them is one of those.</para>
 /// </remarks>
 public sealed class Settings
 {
@@ -155,6 +156,58 @@ public sealed class Settings
     /// <summary>Where the window was when it was last closed. Zero means centre it.</summary>
     [JsonPropertyName("windowBounds")]
     public double[] WindowBounds { get; set; } = [];
+
+    // --- The phone's sound ---------------------------------------------------------
+    // Over the cable, decoded here: docs/AUDIO.md, "In the application". On by
+    // default, because a mirror without sound is half a mirror and the stream
+    // costs 0.3 Mbit/s on a link that is already carrying video.
+
+    /// <summary>
+    /// Whether to ask the phone for its sound at all.
+    /// </summary>
+    /// <remarks>
+    /// Off means the audio stream is never opened: nothing is negotiated, nothing
+    /// is decoded and iOS is never asked for a capture session. That is a different
+    /// thing from <see cref="AudioMuted"/>, which keeps the stream and drops the
+    /// samples.
+    /// </remarks>
+    [JsonPropertyName("audioEnabled")]
+    public bool AudioEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Which Windows output to play on; empty means whatever Windows calls the
+    /// default output.
+    /// </summary>
+    /// <remarks>
+    /// The endpoint identifier rather than its name, because that is what survives
+    /// a reboot and a rename — <c>LuminaMonitor.UsbProbe audio-devices</c> prints
+    /// both. An identifier that no longer resolves falls back to the default, with
+    /// a line in the journal saying so.
+    /// </remarks>
+    [JsonPropertyName("audioOutputId")]
+    public string AudioOutputId { get; set; } = "";
+
+    /// <summary>Zero to a hundred. The application's own gain, never the system mixer's.</summary>
+    [JsonPropertyName("audioVolume")]
+    public int AudioVolume { get; set; } = 100;
+
+    /// <summary>Silence without forgetting the volume.</summary>
+    [JsonPropertyName("audioMuted")]
+    public bool AudioMuted { get; set; } = false;
+
+    /// <summary>
+    /// How long the sound is held back, in milliseconds, to line it up with the
+    /// picture.
+    /// </summary>
+    /// <remarks>
+    /// Fifty by default and it is a starting point, not a measurement: the picture
+    /// takes about 96 ms to cross from the phone's screen to this one, the sound's
+    /// path is shorter, and this closes roughly the difference. The ear has the
+    /// last word, which is why it is a slider — see
+    /// <c>LuminaMonitor.Core.Audio.AudioOptions.DefaultDelayMs</c>.
+    /// </remarks>
+    [JsonPropertyName("audioDelayMs")]
+    public int AudioDelayMs { get; set; } = 50;
 
     /// <summary>The application's own corner of <c>%APPDATA%</c>.</summary>
     public static string Folder { get; } = System.IO.Path.Combine(

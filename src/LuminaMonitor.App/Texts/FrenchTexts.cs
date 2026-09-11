@@ -178,8 +178,27 @@ internal sealed class FrenchTexts : Texts
     public override string PasteFailed(string error) => $"Collage interrompu : {error}";
 
     public override string Audio => "Audio";
-    public override string AudioTooltip => "Son de l'iPhone par le câble : bientôt.";
-    public override string AudioComingSoon => "Son de l'iPhone par le câble : bientôt.";
+    public override string AudioTooltip =>
+        "Le son de l'iPhone, par le câble, sur la sortie Windows que tu choisis. Décodé ici — Windows n'a pas " +
+        "de décodeur AAC-ELD.";
+    public override string AudioSection => "Son de l'iPhone";
+    public override string AudioOutput => "Sortie";
+    public override string AudioDefaultOutput => "Sortie par défaut de Windows";
+    public override string AudioVolume => "Volume";
+    public override string AudioMute => "Muet";
+    public override string AudioDelay => "Retard";
+    public override string AudioDelayHint =>
+        "Retient le son pour l'aligner sur l'image. À augmenter si le son arrive avant.";
+    public override string AudioRetry => "Réessayer";
+    public override string AudioMilliseconds(double milliseconds) => $"{milliseconds:0} ms";
+
+    public override string AudioOff => "Son coupé — le téléphone n'est pas sollicité.";
+    public override string AudioNoSession => "Pas encore de miroir : le son s'ouvre avec lui.";
+    public override string AudioOpening => "Ouverture du flux audio…";
+    public override string AudioRefused(string reason) => $"Pas de son : {reason}";
+    public override string AudioRunning(string device, double queuedMs, long underruns) =>
+        $"Lecture sur {device}  ·  file {queuedMs:0} ms"
+        + (underruns > 0 ? $"  ·  {underruns} coupure(s)" : "");
 
     public override string DimGestureInvalid => "dimGesture attend cinq nombres — luminosité ignorée.";
     public override string OpeningControlCentre => "Ouverture du centre de contrôle…";

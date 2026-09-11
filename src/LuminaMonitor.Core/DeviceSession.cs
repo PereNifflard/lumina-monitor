@@ -27,8 +27,11 @@ namespace LuminaMonitor.Core;
 /// has stopped answering. Three of those without success and the session gives
 /// up and says so through <see cref="RestartRequired"/>: past that point only
 /// the person restarting the phone helps.</para>
+///
+/// <para>The sound is the last rung and the only optional one — see
+/// <c>DeviceSession.Audio.cs</c>, which is the rest of this class.</para>
 /// </remarks>
-public sealed class DeviceSession : IAsyncDisposable
+public sealed partial class DeviceSession : IAsyncDisposable
 {
     private const int LockdownPort = 62078;
 
@@ -453,6 +456,12 @@ public sealed class DeviceSession : IAsyncDisposable
         Info($"Surfaces HID : {Xpc.Dump(surfaces).Trim().Replace("\n", " | ")}");
         Enter(SessionState.MediaUp);
         media.StartWatch();
+
+        // 6) The sound, if it was asked for, and never before this point: the
+        //    picture and the touch are what somebody is waiting for, and the
+        //    audio stream wants the display service left alone for a few seconds
+        //    after the video one. So it opens on its own, behind the mirror.
+        OpenAudioAfterVideo(media);
     }
 
     // --- Keeping the mirror alive -------------------------------------------------
@@ -621,6 +630,10 @@ public sealed class DeviceSession : IAsyncDisposable
 
     private async Task ReleaseAsync()
     {
+        // The sound first: its stream lives on the same daemon and is attached to
+        // the video session, so it is told to stop while that session still
+        // exists — and while iOS still has a capture session to hand back.
+        await CloseAudioAsync();
         if (_media is not null) { try { await _media.StopAsync(); } catch (Exception) { } _media = null; }
         if (_input is not null)
         {

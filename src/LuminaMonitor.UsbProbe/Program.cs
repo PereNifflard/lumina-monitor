@@ -28,6 +28,22 @@ using LuminaMonitor.Core.Usb;
 //                                          the phone's sound: the whole negotiation, what the
 //                                          RTP carries, and a raw capture
 //   LuminaMonitor.UsbProbe aac-selftest    does Windows decode the phone's AAC-ELD? Offline
+//   LuminaMonitor.UsbProbe aac-tables-selftest
+//                                          the AAC-ELD normative tables: prefix codes, band
+//                                          edges, and the low delay window put through
+//                                          analysis and synthesis. Offline
+//   LuminaMonitor.UsbProbe aac-selftest-decode
+//                                          the project's own AAC-ELD decoder against frames
+//                                          whose answer is known exactly. Offline
+//   LuminaMonitor.UsbProbe decode-audio <capture.rtp> <sortie.wav> [--frame=480|512]
+//                                          a recorded audio stream decoded to a WAV, with the
+//                                          measurements that say whether it is right
+//   LuminaMonitor.UsbProbe audio-play <capture.rtp|--silence[=trames]> [--device=<id|default>]
+//                                     [--delay=<ms>] [--dry]
+//                                          a capture replayed through the application's own
+//                                          chain — pump, decoder, jitter buffer, output — at the
+//                                          pace of its own timestamps. --dry opens no endpoint
+//   LuminaMonitor.UsbProbe audio-devices   the Windows outputs, with their mix formats. Offline
 //   LuminaMonitor.UsbProbe sps-selftest    the SPS rewriter: read back, and a second pass
 //   LuminaMonitor.UsbProbe watchdog-selftest  the stream watch's ladder, offline
 //   LuminaMonitor.UsbProbe tcp-selftest    the tunnel's TCP against a paper phone, offline
@@ -372,6 +388,59 @@ if (command == "aac-selftest")
     return AudioTools.AacSelfTest(Say);
 }
 
+if (command == "aac-tables-selftest")
+{
+    // aac-tables-selftest : les tables normatives de l'AAC-ELD, verifiees par
+    // les mathematiques et non par une seconde copie d'elles-memes. Livres de
+    // Huffman : code prefixe complet (Kraft = 1) et aller-retour de chaque mot.
+    // Bandes de facteurs d'echelle : croissantes, derniere arete = longueur de
+    // trame. Fenetre basse latence : analyse puis synthese d'un bruit, d'un
+    // sinus et d'une impulsion, la sortie doit rendre l'entree a l'erreur
+    // d'arrondi pres. Un seul coefficient faux et ce dernier test tombe.
+    return AacTools.TablesSelfTest(Say);
+}
+
+if (command == "aac-selftest-decode")
+{
+    // aac-selftest-decode : le decodeur AAC-ELD sur les trames dont la reponse
+    // est connue exactement. La trame silencieuse du telephone (00 68 34 00)
+    // doit consommer 26 bits juste et rendre du zero ; une trame construite ici
+    // avec quatre valeurs spectrales connues par canal doit rendre exactement ce
+    // que le banc de filtres rend quand on lui donne le meme spectre a la main ;
+    // une trame tronquee doit etre refusee au bit ou elle s'arrete. Hors ligne.
+    return AacTools.SelfTestDecode(Say);
+}
+
+if (command == "decode-audio")
+{
+    // decode-audio <capture.rtp> <sortie.wav> [--frame=480|512] : rejoue une
+    // capture audio hors ligne a travers le decodeur AAC-ELD, ecrit un WAV et
+    // mesure ce qui ne s'entend pas — consommation des bits trame par trame,
+    // continuite aux jointures de trames, RMS par seconde, pic, echantillons non
+    // finis, temps de decodage. Le son est le seul juge, le reste dit ou
+    // chercher quand il est faux.
+    if (args.Length < 3)
+    {
+        Say("Usage : decode-audio <capture.rtp> <sortie.wav> [--frame=480|512]");
+        return 2;
+    }
+    int audioFrameLength = 480;
+    foreach (string argument in args.Skip(3))
+    {
+        if (argument.StartsWith("--frame=", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(argument.AsSpan(8), out int parsed) && parsed is 480 or 512)
+        {
+            audioFrameLength = parsed;
+        }
+        else
+        {
+            Say($"Argument inconnu : {argument}");
+            return 2;
+        }
+    }
+    return AacDecodeTools.DecodeAudio(args[1], args[2], audioFrameLength, Say);
+}
+
 if (command == "sps-selftest")
 {
     // sps-selftest : la reecriture du SPS, sans telephone. Un bit faux dans un
@@ -419,6 +488,48 @@ if (command == "mouse-flood")
     int floodHz = args.Length > 2 && int.TryParse(args[2], out int fh) ? Math.Clamp(fh, 10, 8000) : 2000;
     bool hold = args.Length <= 3 || !args[3].Equals("hover", StringComparison.OrdinalIgnoreCase);
     return MouseFlood.Run(floodSeconds, floodHz, hold, Say);
+}
+
+if (command == "audio-play")
+{
+    // audio-play <capture.rtp|--silence[=trames]> [--device=…] [--delay=…] [--dry] :
+    // rejoue une capture a travers la chaine de l'application elle-meme — pompe,
+    // decodeur AAC-ELD, tampon de gigue, sortie — en respectant les horodatages de
+    // la capture. --dry n'ouvre aucun peripherique : c'est ce que lance la CI, et
+    // c'est ce qu'on lance sur une machine ou quelqu'un travaille.
+    if (args.Length < 2)
+    {
+        Say(AudioPlayTools.Usage);
+        return 2;
+    }
+    string? playDevice = null;
+    int playDelay = LuminaMonitor.Core.Audio.AudioOptions.DefaultDelayMs;
+    bool playDry = false;
+    foreach (string argument in args.Skip(2))
+    {
+        if (argument.Equals("--dry", StringComparison.OrdinalIgnoreCase))
+            playDry = true;
+        else if (argument.StartsWith("--device=", StringComparison.OrdinalIgnoreCase))
+            playDevice = argument[9..].Equals("default", StringComparison.OrdinalIgnoreCase) ? null : argument[9..];
+        else if (argument.StartsWith("--delay=", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(argument.AsSpan(8), out int parsedDelay))
+            playDelay = parsedDelay;
+        else
+        {
+            Say($"Argument inconnu : {argument}");
+            Say(AudioPlayTools.Usage);
+            return 2;
+        }
+    }
+    return AudioPlayTools.Play(args[1], playDevice, playDelay, playDry, Say);
+}
+
+if (command == "audio-devices")
+{
+    // audio-devices : les sorties audio de Windows, leur identifiant stable (celui
+    // que le reglage audioOutputId retient) et le format dans lequel le moteur
+    // melange sur chacune. Hors ligne.
+    return AudioPlayTools.Devices(Say);
 }
 
 UsbmuxClient mux;
@@ -1019,12 +1130,15 @@ using (mux)
             string audioVariant = "default";
             bool audioWithVideo = false;
             string audioDirection = "output";
+            int audioSettleMs = AudioTools.DefaultSettleMs;
             foreach (string argument in args[1..])
             {
                 if (argument.StartsWith("--variant=", StringComparison.OrdinalIgnoreCase))
                     audioVariant = argument[10..];
                 else if (argument.StartsWith("--direction=", StringComparison.OrdinalIgnoreCase))
                     audioDirection = argument[12..];
+                else if (argument.StartsWith("--settle=", StringComparison.OrdinalIgnoreCase))
+                    audioSettleMs = int.Parse(argument[9..]);
                 else if (argument.Equals("--video", StringComparison.OrdinalIgnoreCase))
                     audioWithVideo = true;
                 else if (int.TryParse(argument, out int parsed))
@@ -1034,12 +1148,12 @@ using (mux)
             }
             if (audioSeconds is < 1 or > 300)
             {
-                Say($"usage : audio-info [1..300] [capture.rtp] [--variant=<variante>] [--video] [--direction=<output|input>]"
+                Say($"usage : audio-info [1..300] [capture.rtp] [--variant=<variante>] [--video] [--settle=<ms>] [--direction=<output|input>]"
                     + $"{Environment.NewLine}{AudioTools.VariantUsage}");
                 return 2;
             }
             int audioCode = await AudioTools.RunAsync(audioSeconds, audioCapture, audioVariant, audioWithVideo,
-                audioDirection, DefaultDdiFolder, Say);
+                audioDirection, audioSettleMs, DefaultDdiFolder, Say);
             if (audioCode != 0) return audioCode;
             break;
         }

@@ -91,6 +91,23 @@ internal sealed class AudioSession
     public (long Sent, long Heard) Reports => (_rtcp?.ReportsSent ?? 0, _rtcp?.SenderReports ?? 0);
 
     /// <summary>
+    /// How long a frame takes to reach us after the phone stamped it, in
+    /// milliseconds, or NaN until a sender report has been seen.
+    /// </summary>
+    /// <remarks>
+    /// The same measurement the video side publishes, and it is only worth
+    /// anything next to that one: both are computed against the phone's own NTP
+    /// clock, so the difference between them is the gap between the sound and the
+    /// picture — which is what a person setting a delay by ear is trying to close.
+    /// See <see cref="RtcpSession.PipelineMs"/> for what it does and does not
+    /// include.
+    /// </remarks>
+    public double PipelineMs => _rtcp?.PipelineMs ?? double.NaN;
+
+    /// <summary>The wall clock the phone published in its last sender report, or null.</summary>
+    public DateTime? SenderClock => _rtcp?.SenderClock;
+
+    /// <summary>
     /// How far the RTP timestamp advances from one packet to the next, on
     /// average; zero before the second packet.
     /// </summary>

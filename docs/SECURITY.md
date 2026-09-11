@@ -124,8 +124,12 @@ themselves, physically, on the device.
   described above.
 - **No third-party code.** Zero `PackageReference` across the four
   `.csproj` files, zero downloaded binary, zero installed driver. The xar,
-  pbzx, xz/LZMA2, cpio, UDIF, HFS+ and APFS readers are written here, from
-  published specifications.
+  pbzx, xz/LZMA2, cpio, UDIF, HFS+ and APFS readers — and the AAC-ELD decoder
+  — are written here, from published specifications. The one exception to
+  "no third-party code" is not code but data: the AAC-ELD normative tables in
+  `Media/Aac/Tables/`, held under the MPEG software module notice rather than
+  this repository's MIT terms (see
+  [`NOTICE.md`](../src/LuminaMonitor.Core/Media/Aac/Tables/NOTICE.md)).
 - **No redistribution of Apple binaries.** No Developer Disk Image, no
   firmware, no Xcode component lives in this repository, and `.gitignore`
   blocks `/ddi*/`, `*.xip`, `*.dmg` and `*.pkg`. Everyone extracts the image

@@ -138,6 +138,37 @@ more thing to rebuild after every incident.
   state, no reply expected); `TypeAsync` builds on it. Probe: `keys <text>` command to prove
   surface 512 (open Notes and look).
 
+## Audio panel
+The phone's sound, over the cable, on the Windows output of one's choice. `MainWindow.Audio.cs` and
+the XAML's `AudioPanel` border; the chain itself is in Core and described in §11 of
+[`AUDIO.md`](AUDIO.md). No microphone and no Bluetooth: the phone advertises no incoming capability
+(§5) and the radio was ruled out (§9).
+
+| Control | Setting | What it does |
+|---|---|---|
+| "iPhone sound" switch | `audioEnabled` (true) | opens or **closes the stream**: off, nothing is negotiated, nothing is decoded, and iOS holds no capture session |
+| "Output" list | `audioOutputId` (empty) | "Windows default output" (the **Console** role) then the **active** render endpoints; what is stored is the endpoint identifier, not its name |
+| "Volume" slider + "Mute" | `audioVolume` (100), `audioMuted` (false) | a gain applied to the samples inside the app, **never** the system mixer — that endpoint is shared with the rest of the machine |
+| "Delay" slider, 0–300 ms | `audioDelayMs` (50) | the jitter buffer's target fill; this is the setting that lines the lips up |
+
+- **The values are written when the panel closes** (plus the two switches, which are rare): a slider
+  dragged across its travel raises a hundred events, and a hundred atomic file replacements for one
+  gesture is a disk being punished for nothing. The live chain is told at once —
+  `DeviceSession.AudioOptions` applies while the sound runs.
+- **The controls are filled with the handlers held off** (`_audioFilling`): a slider given its value
+  while its handler is live saves that value back over the one it was just given.
+- **The output list is read on another thread** (`Task.Run`): the MMDevice enumeration is COM and this
+  code runs on the window's thread. It is rebuilt when the language changes, its first entry being a
+  sentence.
+- **Status line, at four hertz at most**, in the order the questions come: off → no mirror → opening →
+  refused (with the daemon's reason and a **Try again** button, the one place it appears) → playing on
+  *device*, buffer *n* ms, and the gap count if there is one.
+- Styles: `ToggleSwitch`, `PanelCombo` and `PanelButton` already existed (leftovers of the Bluetooth
+  bridge); `PanelSlider` is new in `App.xaml`, its template rewritten whole as `Button`'s is — Aero2
+  draws a light grey rail that no colour overrides. The list's entries present themselves through
+  `ToString()`, with no `DisplayMemberPath`: nothing for the binding engine to reflect over on a
+  private type.
+
 ## Session
 - On launch and on every plug-in (`UsbmuxClient` Listen: Attached/Detached):
   `DeviceSession.ConnectAsync`.
@@ -179,6 +210,12 @@ symptoms.
 `LuminaMonitor.App.exe --diagnostic <seconds>`: normal window, same log but verbose (one line
 per second: states, frames/s received and presented, presentation latency, errors), closes
 itself automatically at the deadline. Used for testing with nobody in front of the screen.
+
+Every line carries an **`AUDIO`** block — stream open/refused/off, packets, frames decoded and
+failed, losses, out-of-order packets, under-runs, skips, queue fill against its target, endpoint and
+format in use, sound-minus-picture skew. The format comes from `AudioStats.ToString()`, one place
+shared with the probe. It is the only trace of the sound when nobody has opened the panel, and the
+synchronisation diagnostic adds a line of its own every five seconds.
 
 ## Acceptance criteria
 - Build 0 warnings; `--diagnostic 20`: reaches `MediaUp`, ≥ 30 frames/s presented, no exception in

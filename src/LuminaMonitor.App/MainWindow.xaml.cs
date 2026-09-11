@@ -691,6 +691,9 @@ public partial class MainWindow : Window
         var session = new DeviceSession(new DdiSource(_ddiFolder!), new SessionLog(this))
         {
             DecodeVideo = true,
+            // Handed over before the climb, so the sound opens with the mirror
+            // rather than waiting for somebody to open the Audio panel.
+            AudioOptions = AudioOptionsFromSettings(),
         };
         session.StateChanged += state => Dispatcher.InvokeAsync(() => AdoptState(state));
         // The banner itself is decided once a second in WatchDarkScreen, which
@@ -1534,6 +1537,7 @@ public partial class MainWindow : Window
             $"  souris {mouseHz,6:F0}/s  OnMouseMove {moveMean,6:F1} us (max {moveMax,7:F1})" +
             $"  tick rendu {gapMean,5:F1} / p99 {gapP99,6:F1} / max {gapMax,7:F1} ms" +
             $"  images doublees {_framesSuperseded}  {queues}{sink}" + drift + tunnel + entrees +
+            AudioJournalBlock() +
             $"  erreurs {_errors}");
 
         _maxConvertMs = 0;
@@ -2065,6 +2069,10 @@ public partial class MainWindow : Window
         _upkeep.Stop();
         _upkeep.Tick -= OnUpkeep;
         _display.Stop();
+
+        // The Audio panel writes its four numbers when it closes; a window shut
+        // with the panel still open would otherwise lose the last slider moved.
+        CloseAudioPanel();
 
         if (WindowState == WindowState.Normal)
         {

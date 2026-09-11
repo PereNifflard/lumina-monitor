@@ -94,8 +94,10 @@ tunnel and the mirror on its own; the status bar reports where it stands.
 - **F2**: types the Windows clipboard onto the phone. (F2, not Ctrl+V: while
   in control, Ctrl+V would go to the phone, which expects Cmd+V.)
 - **F3**: counters (frames/s, latency, reports sent, errors).
-- **Audio** (bottom bar button): a panel, empty for now — see "Known
-  limitations" below.
+- **Audio** (bottom bar button): the phone's sound, over the cable, on the
+  Windows output you pick — decoded by an AAC-ELD decoder written into this
+  project, because Windows ships none. Volume, mute and a delay to line the
+  sound up with the picture.
 
 The interface follows the Windows display language (English or French) and
 can be forced in the settings.
@@ -119,10 +121,12 @@ can be forced in the settings.
 - The **Apple Devices** app must be running, or at least have been launched
   once since the phone was plugged in: it's the one carrying the
   multiplexer.
-- **The iPhone's sound is coming soon, over the cable** — a decoder written
-  into this project; see [`docs/AUDIO.md`](docs/AUDIO.md). The **PC's
-  microphone can't serve as the iPhone's microphone**: the cable carries no
-  such capability, Bluetooth or not.
+- The sound is held back by a **fixed delay you set by ear** (50 ms by
+  default): the gap between sound and picture is measured and written to the
+  log every five seconds, but nothing corrects it on its own yet — see
+  [`docs/AUDIO.md`](docs/AUDIO.md).
+- The **PC's microphone can't serve as the iPhone's microphone**: the cable
+  carries no such capability, Bluetooth or not.
 
 ## Troubleshooting
 
@@ -182,7 +186,10 @@ phone — is in [`docs/SECURITY.md`](docs/SECURITY.md). The essentials:
   its part, writes captures of your screen to the current directory.
 - **No third-party code on the PC.** No NuGet, no downloaded binary, no
   installed driver. The only Apple component is the one the Store's Apple
-  Devices app put there.
+  Devices app put there. No third-party code runs — the one exception is
+  data, not code: the AAC-ELD tables under
+  [`Media/Aac/Tables/`](src/LuminaMonitor.Core/Media/Aac/Tables/NOTICE.md),
+  numbers imposed by the MPEG-4 Audio standard rather than a library.
 - **No Apple image in the repository.** The Developer Disk Image is a binary
   signed by Apple: everyone extracts it from their own download, it never
   travels through here. `.gitignore` blocks `/ddi*/`, `*.xip`, `*.dmg` and
@@ -250,3 +257,13 @@ the comment says so on the spot.
 MIT — see [`LICENSE`](LICENSE). The license covers this repository's code and
 nothing else: neither Apple's Developer Disk Image nor the Apple Devices
 app's multiplexer, which remain subject to Apple's own terms.
+
+**One exception, and it is data, not code**: the AAC-ELD tables in
+[`src/LuminaMonitor.Core/Media/Aac/Tables/`](src/LuminaMonitor.Core/Media/Aac/Tables/)
+are transcribed from ISO's own freely downloadable reference software and
+carry the MPEG software module notice reproduced in
+[`NOTICE.md`](src/LuminaMonitor.Core/Media/Aac/Tables/NOTICE.md), not this
+repository's MIT terms. AAC-ELD remains covered by active patents (Fraunhofer
+IIS, licensed through Via Licensing); this project's use is free and
+non-commercial, the situation of any open-source AAC decoder — a commercial
+use would need its own patent license.

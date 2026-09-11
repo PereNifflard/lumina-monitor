@@ -93,8 +93,10 @@ tunnel et le miroir toute seule ; la barre d'état dit où elle en est.
 - **F2** : taper le presse-papiers Windows sur le téléphone. (F2 et pas Ctrl+V :
   pendant le pilotage, Ctrl+V partirait au téléphone, qui attend Cmd+V.)
 - **F3** : compteurs (images/s, latence, rapports envoyés, erreurs).
-- **Audio** (bouton de la barre du bas) : un panneau, vide pour l'instant —
-  voir « Limites connues » plus bas.
+- **Audio** (bouton de la barre du bas) : le son du téléphone, par le câble, sur
+  la sortie Windows de ton choix — décodé par un décodeur AAC-ELD écrit dans ce
+  projet, Windows n'en fournissant aucun. Volume, sourdine, et un retard pour
+  aligner le son sur l'image.
 
 L'interface suit la langue d'affichage de Windows (anglais ou français) et
 peut être forcée dans les réglages.
@@ -116,10 +118,12 @@ peut être forcée dans les réglages.
   ses essais (5 s, doublés, plafond 30 s) au lieu d'insister.
 - L'app **Appareils Apple** doit tourner, ou au moins avoir été lancée une fois
   depuis le branchement : c'est elle qui porte le multiplexeur.
-- **Le son de l'iPhone arrive bientôt, par le câble** — un décodeur écrit dans
-  ce projet ; voir [`docs/AUDIO.fr.md`](docs/AUDIO.fr.md). Le **micro du PC ne
-  peut pas servir de micro à l'iPhone** : le câble ne porte pas cette
-  capacité, Bluetooth ou pas.
+- Le son est retenu par un **retard fixe réglé à l'oreille** (50 ms par
+  défaut) : l'écart entre le son et l'image est mesuré et écrit au journal
+  toutes les cinq secondes, mais rien ne le corrige encore tout seul — voir
+  [`docs/AUDIO.fr.md`](docs/AUDIO.fr.md).
+- Le **micro du PC ne peut pas servir de micro à l'iPhone** : le câble ne porte
+  pas cette capacité, Bluetooth ou pas.
 
 ## Dépannage
 
@@ -180,7 +184,10 @@ téléphone — est dans [`docs/SECURITY.fr.md`](docs/SECURITY.fr.md). L'essenti
   courant.
 - **Aucun code tiers sur le PC.** Pas de NuGet, pas de binaire téléchargé, pas
   de pilote installé. Le seul composant Apple est celui que l'app « Appareils
-  Apple » du Store a posé.
+  Apple » du Store a posé. Aucun code tiers ne s'exécute — la seule exception
+  est de la donnée, pas du code : les tables AAC-ELD sous
+  [`Media/Aac/Tables/`](src/LuminaMonitor.Core/Media/Aac/Tables/NOTICE.fr.md),
+  des nombres imposés par la norme MPEG-4 Audio et non une bibliothèque.
 - **Aucune image Apple dans le dépôt.** L'image développeur est un binaire signé
   par Apple : chacun l'extrait de son propre téléchargement, elle ne circule
   jamais par ici. Le `.gitignore` bloque `/ddi*/`, `*.xip`, `*.dmg` et `*.pkg`.
@@ -247,3 +254,13 @@ personnalisation TSS, par exemple), le commentaire le dit sur place.
 MIT — voir [`LICENSE`](LICENSE). La licence couvre le code de ce dépôt et rien
 d'autre : ni l'image développeur d'Apple, ni le multiplexeur de l'app
 « Appareils Apple », qui restent soumis aux conditions d'Apple.
+
+**Une exception, et c'est de la donnée, pas du code** : les tables AAC-ELD de
+[`src/LuminaMonitor.Core/Media/Aac/Tables/`](src/LuminaMonitor.Core/Media/Aac/Tables/)
+sont transcrites depuis le logiciel de référence que l'ISO télécharge
+gratuitement, et portent la notice de module logiciel MPEG reproduite dans
+[`NOTICE.fr.md`](src/LuminaMonitor.Core/Media/Aac/Tables/NOTICE.fr.md), pas
+les termes MIT de ce dépôt. L'AAC-ELD reste couvert par des brevets actifs
+(Fraunhofer IIS, licenciés via Via Licensing) ; l'usage de ce projet est
+gratuit et non commercial, la situation de tout décodeur AAC open source — un
+usage commercial demanderait sa propre licence de brevets.

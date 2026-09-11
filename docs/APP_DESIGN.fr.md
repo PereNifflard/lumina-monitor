@@ -125,6 +125,37 @@ chose de plus à reconstruire après chaque incident.
 - Nouveau dans Core : `InputInjector.KeyboardReportAsync(IReadOnlyCollection<int> usagesHeld)` (état complet, sans réponse) ;
   `TypeAsync` s'appuie dessus. Sonde : commande `keys <texte>` pour prouver la surface 512 (on ouvre Notes et on regarde).
 
+## Panneau Audio
+Le son du téléphone, par le câble, sur la sortie Windows de son choix. `MainWindow.Audio.cs` et le
+`Border` `AudioPanel` du XAML ; la chaîne elle-même est dans Core, décrite au § 11 de
+[`AUDIO.fr.md`](AUDIO.fr.md). Ni micro ni Bluetooth : le téléphone n'annonce aucune capacité entrante
+(§ 5) et la radio a été écartée (§ 9).
+
+| Commande | Réglage | Effet |
+|---|---|---|
+| interrupteur « Son de l'iPhone » | `audioEnabled` (vrai) | ouvre ou **ferme le flux** : coupé, rien n'est négocié, rien n'est décodé, et iOS ne garde aucune session de capture |
+| liste « Sortie » | `audioOutputId` (vide) | « Sortie par défaut de Windows » (rôle **Console**) puis les périphériques de rendu **actifs** ; l'identifiant stocké est celui du point de terminaison, pas son nom |
+| curseur « Volume » + « Muet » | `audioVolume` (100), `audioMuted` (faux) | gain appliqué aux échantillons dans l'app, **jamais** le mélangeur système — ce périphérique est partagé avec le reste de la machine |
+| curseur « Retard » 0–300 ms | `audioDelayMs` (50) | remplissage cible du tampon de gigue ; c'est le réglage qui aligne les lèvres |
+
+- **Les valeurs ne sont écrites qu'à la fermeture du panneau** (plus les deux interrupteurs, qui sont
+  rares) : un curseur traîné d'un bout à l'autre lève cent événements, et cent remplacements atomiques
+  de fichier pour un geste, c'est un disque puni pour rien. La chaîne vivante, elle, est prévenue
+  immédiatement — `DeviceSession.AudioOptions` s'applique à chaud.
+- **Les contrôles sont remplis avec les gestionnaires en veilleuse** (`_audioFilling`) : un curseur à
+  qui l'on pose sa valeur pendant que son gestionnaire est vif réenregistre par-dessus celle qu'on
+  vient de lui donner.
+- **La liste des sorties est lue sur un autre fil** (`Task.Run`) : l'énumération MMDevice est du COM et
+  ce code tourne sur le fil de la fenêtre. Elle est reconstruite au changement de langue, sa première
+  entrée étant une phrase.
+- **Ligne d'état, 4 Hz au plus**, dans l'ordre des questions qu'on se pose : coupé → pas de miroir →
+  ouverture → refusé (avec le motif du démon et un bouton **Réessayer**, seul endroit où il paraît) →
+  lecture sur *périphérique*, file *n* ms, et le nombre de coupures s'il y en a.
+- Styles : `ToggleSwitch`, `PanelCombo`, `PanelButton` existaient déjà (reliquats du pont Bluetooth) ;
+  `PanelSlider` est neuf dans `App.xaml`, modèle repris en entier comme pour `Button` — Aero2 dessine
+  un rail gris clair qu'aucune couleur ne reprend. Les entrées de la liste se présentent par
+  `ToString()`, sans `DisplayMemberPath` : rien à faire réfléchir sur un type privé.
+
 ## Session
 - Au lancement et à chaque branchement (`UsbmuxClient` Listen : Attached/Detached) : `DeviceSession.ConnectAsync`.
 - `StateChanged` → barre d'état (« Branché », « Appairé », « Image développeur… », « Tunnel », « Miroir », « Erreur : … »).
@@ -160,6 +191,12 @@ trace » et « le processus s'est terminé sans rien dans l'Observateur d'évén
 `LuminaMonitor.App.exe --diagnostic <secondes>` : fenêtre normale, même journal mais verbeux (une ligne
 par seconde : états, images/s reçues et présentées, latence de présentation, erreurs), fermeture
 automatique à l'échéance. Sert aux tests sans personne devant l'écran.
+
+Chaque ligne porte un bloc **`AUDIO`** — flux ouvert/refusé/coupé, paquets, trames décodées et en
+échec, pertes, désordre, sous-alimentations, sauts, remplissage de la file face à sa cible,
+périphérique et format actifs, écart son-image. Le format vient de `AudioStats.ToString()`, un seul
+endroit partagé avec la sonde. C'est la seule trace du son quand personne n'a ouvert le panneau, et
+le diagnostic de synchro ajoute sa propre ligne toutes les cinq secondes.
 
 ## Critères d'acceptation
 - Build 0 avertissement ; `--diagnostic 20` : atteint `MediaUp`, ≥ 30 images/s présentées, aucune exception dans le journal.

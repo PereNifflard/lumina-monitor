@@ -124,8 +124,12 @@ l'appareil les ait ouvertes lui-même, physiquement, sur l'appareil.
   est la requête TSS décrite plus haut.
 - **Aucun code tiers.** Zéro `PackageReference` dans les quatre `.csproj`, zéro
   binaire téléchargé, zéro pilote installé. Les lecteurs xar, pbzx, xz/LZMA2,
-  cpio, UDIF, HFS+ et APFS sont écrits ici, d'après les spécifications
-  publiées.
+  cpio, UDIF, HFS+ et APFS — et le décodeur AAC-ELD — sont écrits ici, d'après
+  les spécifications publiées. La seule exception à « aucun code tiers » est
+  de la donnée, pas du code : les tables normatives de l'AAC-ELD dans
+  `Media/Aac/Tables/`, sous la notice de module logiciel MPEG et non sous les
+  termes MIT de ce dépôt (voir
+  [`NOTICE.fr.md`](../src/LuminaMonitor.Core/Media/Aac/Tables/NOTICE.fr.md)).
 - **Aucune redistribution de binaire Apple.** Ni image développeur, ni firmware,
   ni composant d'Xcode ne se trouve dans ce dépôt, et le `.gitignore` bloque
   `/ddi*/`, `*.xip`, `*.dmg` et `*.pkg`. Chacun extrait l'image de son propre
