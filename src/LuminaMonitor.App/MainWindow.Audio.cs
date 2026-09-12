@@ -112,7 +112,6 @@ public partial class MainWindow
     /// <summary>The panel's fixed words, in the current language; called by ApplyTexts.</summary>
     private void ApplyAudioTexts(Texts t)
     {
-        AudioLabel.Text = t.Audio;
         AudioButton.ToolTip = t.AudioTooltip;
         AutomationProperties.SetName(AudioButton, t.Audio);
 
@@ -122,8 +121,6 @@ public partial class MainWindow
         AutomationProperties.SetName(AudioOutputBox, t.AudioOutput);
         AudioVolumeLabel.Text = t.AudioVolume;
         AutomationProperties.SetName(AudioVolumeSlider, t.AudioVolume);
-        AudioMuteLabel.Text = t.AudioMute;
-        AutomationProperties.SetName(AudioMuteSwitch, t.AudioMute);
         AudioDelayLabel.Text = t.AudioDelay;
         AutomationProperties.SetName(AudioDelaySlider, t.AudioDelay);
         AudioDelayNote.Text = t.AudioDelayHint;

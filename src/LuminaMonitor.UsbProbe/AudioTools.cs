@@ -1,5 +1,7 @@
+using LuminaMonitor.Core.Audio;
 using LuminaMonitor.Core;
 using LuminaMonitor.Core.Ddi;
+using LuminaMonitor.Core.Hid;
 using LuminaMonitor.Core.Media;
 using LuminaMonitor.Core.RemoteXpc;
 using LuminaMonitor.Core.Tunnel;
@@ -48,6 +50,9 @@ internal static class AudioTools
         + "              paliers-sans-codec | paliers-codec-seuls\n"
         + "  options   : --video (video et audio dans la meme session, comme Xcode)\n"
         + "              --settle=<ms> (pause avant chaque flux, defaut 0)\n"
+        + "              --press=<bouton>@<s> (appuie un bouton du chassis a la seconde s, repetable)\n"
+        + "              --stop=<session|bye> (arret audio : stopmediastream, ou BYE seul ; defaut session)\n"
+        + "              --hold=<s> (avec --video : garde la video s secondes apres l'arret audio et compte)\n"
         + "              --direction=<output|input>  (input : ce que le telephone repond au micro)";
 
     public static bool ParseVariant(string text, out AudioOfferOptions options, out string label)
@@ -166,7 +171,8 @@ internal static class AudioTools
     /// — ouvre un flux audio et rapporte tout ce que le telephone en dit.
     /// </summary>
     public static async Task<int> RunAsync(int seconds, string? capturePath, string variant, bool withVideo,
-        string direction, int settleMs, string ddiFolder, Action<string> say)
+        string direction, int settleMs, IReadOnlyList<(string Button, int AtSecond)> presses,
+        string stopMode, int holdSeconds, int recycleAt, bool unpaired, string ddiFolder, Action<string> say)
     {
         if (!ParseVariant(variant, out var offer, out string label))
         {
@@ -226,8 +232,15 @@ internal static class AudioTools
             {
                 Offer = offer,
                 Direction = direction,
-                PairedSessionId = video?.SessionId,
+                // Unpaired on demand: its own session id rather than the video's,
+                // so stopmediastream on the audio never touches the picture, and
+                // iOS may not treat it as a screen recording's audio track. The
+                // video's session is still spared from the hygiene sweep, or the
+                // guard would take the picture down with nothing told to keep.
+                PairedSessionId = unpaired ? null : video?.SessionId,
+                SpareSessionId = video?.SessionId,
             };
+            if (unpaired) say("Audio NON apparie : session propre, video epargnee de la garde.");
             audio.RtpPacket += tap.Add;
             // Armed before the call: the phone sends the moment it answers, and
             // the first packets are the ones that say what the stream carries.
@@ -264,9 +277,46 @@ internal static class AudioTools
                     + $" SourcePort = {audio.ConfigText("SourcePort") ?? "(absent)"}");
 
                 say($"Ecoute pendant {seconds} s — JOUE UN SON SUR LE TELEPHONE MAINTENANT.");
+                // Chassis buttons pressed at a given second of the listening
+                // window, through the same Indigo door the window uses. What
+                // this measures: whether the phone's own volume — mute above
+                // all — is applied before or after the point where the stream
+                // is tapped. The decoded capture answers, second by second.
+                RemoteXpc? indigo = null;
                 for (int elapsed = 1; elapsed <= seconds; elapsed++)
                 {
                     await Task.Delay(1000);
+                    foreach (var (button, at) in presses)
+                    {
+                        if (at != elapsed) continue;
+                        indigo ??= await climb.Rsd.OpenAsync(IndigoHid.ServiceName, writePatience: TimeSpan.FromSeconds(1));
+                        await IndigoHid.PressAsync(indigo, button);
+                        say($"  t={elapsed,3} s : bouton « {button} » presse.");
+                    }
+                    // The window's toggle, reproduced: at this second the audio
+                    // is stopped by BYE only (its stream lingers on the phone) and
+                    // reopened on the SAME session id the video holds — exactly
+                    // what turning the sound off then on does. If the reopened
+                    // stream carries silence while the phone plays on, the shared
+                    // session is where the sound is lost.
+                    if (recycleAt == elapsed)
+                    {
+                        say($"  t={elapsed,3} s : RECYCLAGE — arret BYE puis reouverture sur la meme session.");
+                        audio.RtpPacket -= tap.Add;
+                        try { await audio.StopAsync(tellDaemon: false); }
+                        catch (Exception e) { say($"    arret incomplet : {e.Message}"); }
+                        audio = new AudioSession(climb.Net, climb.Rsd)
+                        {
+                            Offer = offer,
+                            Direction = direction,
+                            PairedSessionId = video?.SessionId,
+                        };
+                        audio.RtpPacket += tap.Add;
+                        try { await audio.StartAsync(log); }
+                        catch (Exception e) { say($"    reouverture impossible : {e.Message}"); }
+                        say($"    reouvert : {(audio.Streaming ? "flux accepte" : "REFUSE " + audio.Failure)}"
+                            + $" (SourcePort {audio.ConfigText("SourcePort") ?? "?"}).");
+                    }
                     var (packets, bytes, rtcp) = audio.Counts;
                     var (sent, heard) = audio.Reports;
                     if (elapsed % 5 == 0 || elapsed == seconds)
@@ -287,8 +337,28 @@ internal static class AudioTools
             // app until something closes it.
             if (audio is not null)
             {
-                say("Arret du flux audio…");
-                try { await audio.StopAsync(); } catch (Exception e) { say($"arret audio incomplet : {e.Message}"); }
+                say(stopMode == "bye"
+                    ? "Arret du flux audio par BYE seul, sans stopmediastream (la session est partagee avec la video)…"
+                    : "Arret du flux audio…");
+                try { await audio.StopAsync(tellDaemon: stopMode != "bye", keepPort: holdSeconds > 0); }
+                catch (Exception e) { say($"arret audio incomplet : {e.Message}"); }
+            }
+            // What the two streams do once the audio one has been stopped: does
+            // the picture survive, does the sound really stop. The video packet
+            // count and the audio port answer, second by second.
+            if (video is not null && audio is not null && holdSeconds > 0)
+            {
+                long videoBefore = video.Stats.Packets;
+                long audioBefore = audio.Counts.Packets;
+                for (int held = 1; held <= holdSeconds; held++)
+                {
+                    await Task.Delay(1000);
+                    long videoNow = video.Stats.Packets, audioNow = audio.Counts.Packets;
+                    say($"  +{held,2} s : video {videoNow - videoBefore} paquet(s), audio {audioNow - audioBefore} paquet(s)");
+                    videoBefore = videoNow; audioBefore = audioNow;
+                }
+                await ShowAsync(climb, "mediastreamstatus (audio arrete, video en place)",
+                    DisplayService.GetMediaStreamServerStatusAsync, say);
             }
             if (video is not null)
             {
@@ -538,6 +608,91 @@ internal static class AudioTools
     /// measure is what the phone does with an audio stream that has no video
     /// beside it. Returns null, having said why, when a rung refuses.
     /// </remarks>
+    /// <summary>
+    /// audio-listen [secondes] — the phone's sound in the headphones, live, with
+    /// no mirror.
+    /// </summary>
+    /// <remarks>
+    /// The one configuration measured to carry content a display stream makes the
+    /// phone withhold. With the mirror up, iOS treats the media session as a
+    /// screen recording and a protected app — Apple Music above all — stops
+    /// feeding the capture; without it, the very same CoreDevice audio stream
+    /// carries that app in full (measured 11 September 2026, and the decoded
+    /// capture plays). So this opens the audio stream <b>alone</b>, on its own
+    /// session, and renders it to the Windows output: proof that the sound does
+    /// cross the cable on Apple's own path, and a usable way to listen to the
+    /// phone on this machine's speakers when the picture is not wanted.
+    /// </remarks>
+    public static async Task<int> ListenAsync(int seconds, string? deviceId, int mirrorAt,
+        string ddiFolder, Action<string> say)
+    {
+        var log = new ConsoleLog();
+        await using var climb = await ClimbAsync(ddiFolder, say, log);
+        if (climb is null)
+            return 6;
+
+        var options = AudioOptions.Default with { DeviceId = deviceId };
+        MediaSession? video = null;
+        // Its own session id, and no video open yet: the sound is established
+        // first, which is the whole point of the command.
+        var stream = new AudioStream(climb.Net, climb.Rsd,
+            new XpcUuid(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)),
+            options, log, () => 0);
+        try
+        {
+            await stream.StartAsync(new ConsoleProgress(say));
+            if (!stream.Streaming)
+            {
+                say($"*** FLUX AUDIO REFUSE *** {stream.Failure ?? "(aucun motif rapporte)"}");
+                return 5;
+            }
+            say($"*** ECOUTE {seconds} s *** joue ce que tu veux sur le telephone — Apple Music compris."
+                + (mirrorAt > 0 ? $" Le MIROIR s'ouvrira a t={mirrorAt} s, l'audio deja etabli." : " Sans miroir."));
+            for (int elapsed = 1; elapsed <= seconds; elapsed++)
+            {
+                await Task.Delay(1000);
+                // The order that has never been tried: the sound is already
+                // flowing, and only then is the picture asked for — with the
+                // audio session named as one to spare, so the video's own orphan
+                // guard does not close it the way it did on 11 September 2026.
+                if (mirrorAt == elapsed)
+                {
+                    say($"  t={elapsed,3} s : OUVERTURE DU MIROIR (audio deja etabli, sa session epargnee)…");
+                    video = new MediaSession(climb.Net, climb.Rsd)
+                    {
+                        Codecs = VideoCodecs.AvcOnly,
+                        SpareSessionId = stream.SessionId,
+                    };
+                    try { await video.StartAsync(log); }
+                    catch (Exception e) { say($"    miroir impossible : {e.Message}"); }
+                    say($"    miroir : {(video.Streaming ? "flux video en place" : "REFUSE " + video.Failure)}");
+                }
+                var stats = stream.Stats;
+                if (elapsed % 2 == 0 || elapsed == seconds)
+                    say($"  t={elapsed,3} s : {stats.Packets} trames, niveau {stats.LevelText},"
+                        + $" file {stats.QueuedMs:F0} ms, sous-alim {stats.Underruns}"
+                        + (video is { Streaming: true } ? $", video {video.Stats.Packets} paq" : ""));
+            }
+        }
+        finally
+        {
+            say("Arret du flux audio…");
+            try { await stream.StopAsync(); } catch (Exception e) { say($"arret incomplet : {e.Message}"); }
+            if (video is not null)
+            {
+                say("Arret du flux video…");
+                try { await video.StopAsync(); } catch (Exception e) { say($"arret video incomplet : {e.Message}"); }
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>Reports a stream's progress lines to the console.</summary>
+    private sealed class ConsoleProgress(Action<string> say) : IProgress<string>
+    {
+        public void Report(string value) => say(value);
+    }
+
     private static async Task<Climb?> ClimbAsync(string ddiFolder, Action<string> say, ConsoleLog log)
     {
         UsbmuxClient mux;
@@ -558,7 +713,20 @@ internal static class AudioTools
         bool handedOver = false;
         try
         {
-            var (deviceId, udid) = await FirstDeviceAsync(mux, say);
+            long deviceId;
+            string udid;
+            try
+            {
+                (deviceId, udid) = await FirstDeviceAsync(mux, say);
+            }
+            catch (InvalidOperationException exception)
+            {
+                // An unplugged cable is the ordinary case, not a fault: the
+                // multiplexer answers, it simply has nothing to offer. A stack
+                // trace for that tells nobody to plug the phone back in.
+                say($"{exception.Message} Branche l'iPhone en USB et deverrouille-le.");
+                return null;
+            }
             var record = await ReadPairRecordAsync(mux, udid, say);
             var lockdown = new LockdownClient(await lockdownPipe.ConnectToDeviceAsync(deviceId, LockdownPort));
             string? refusal = await lockdown.StartSessionAsync(record);

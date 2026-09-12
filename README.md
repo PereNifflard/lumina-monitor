@@ -97,7 +97,8 @@ tunnel and the mirror on its own; the status bar reports where it stands.
 - **Audio** (bottom bar button): the phone's sound, over the cable, on the
   Windows output you pick — decoded by an AAC-ELD decoder written into this
   project, because Windows ships none. Volume, mute and a delay to line the
-  sound up with the picture.
+  sound up with the picture; the iPhone itself is muted meanwhile, so the
+  room stays quiet.
 
 The interface follows the Windows display language (English or French) and
 can be forced in the settings.

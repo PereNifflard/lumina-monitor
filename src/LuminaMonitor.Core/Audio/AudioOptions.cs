@@ -55,6 +55,30 @@ public sealed record AudioOptions
     /// <summary>The jitter buffer's target fill, in milliseconds.</summary>
     public int DelayMs { get; init; } = DefaultDelayMs;
 
+    /// <summary>
+    /// Whether the phone itself is silenced while its sound plays here.
+    /// </summary>
+    /// <remarks>
+    /// Off by default, and it earned that the hard way on 11 September 2026. The
+    /// idea was sound: the stream is a tap, the phone goes on playing through its
+    /// own speaker, and the same music a hundred milliseconds apart in the room
+    /// and in the headphones is unpleasant, so press the Mute key on open. The
+    /// first measurement — audio stream alone, <c>audio-info --press=mute@4</c> —
+    /// showed the tap sitting before the volume, the capture full through the
+    /// mute, and seemed to prove it safe. It was not: repeated <em>with the
+    /// mirror running</em> (<c>audio-info --video --press=mute@4 --press=mute@10</c>)
+    /// the capture went to <b>digital silence</b> the instant Mute was pressed and
+    /// <b>stayed there</b>, the second press meant to undo it changing nothing —
+    /// and volume-down behaves the same way. With a display stream up, a Consumer
+    /// volume/mute event makes some apps (Apple Music above all) stop feeding the
+    /// system-audio capture for good, while still playing to the speaker: the
+    /// phone is heard, the headphones are silent, which is the exact opposite of
+    /// the goal. So silencing the phone and capturing its sound are mutually
+    /// exclusive for those apps, and the safe default is to capture. Left on, it
+    /// still works for apps that tolerate it; the panel warns which do not.
+    /// </remarks>
+    public bool SilencePhone { get; init; }
+
     /// <summary>Apple's own, and this project's: sound on, default output, full volume.</summary>
     public static AudioOptions Default { get; } = new();
 

@@ -532,6 +532,29 @@ if (command == "audio-devices")
     return AudioPlayTools.Devices(Say);
 }
 
+if (command == "audio-listen")
+{
+    // audio-listen [secondes] [--device=<id>] : le son du telephone dans le
+    // casque, en direct, SANS miroir — la seule configuration mesuree qui porte
+    // le son des apps protegees (Apple Music), parce qu'aucun flux d'affichage
+    // n'est ouvert. Voir docs/AUDIO.md.
+    int listenSeconds = 30;
+    string? listenDevice = null;
+    int listenMirrorAt = 0;
+    foreach (string argument in args[1..])
+    {
+        if (argument.StartsWith("--device=", StringComparison.OrdinalIgnoreCase))
+            listenDevice = argument[9..];
+        else if (argument.StartsWith("--mirror-at=", StringComparison.OrdinalIgnoreCase))
+            listenMirrorAt = int.Parse(argument[12..]);
+        else if (int.TryParse(argument, out int parsed))
+            listenSeconds = parsed;
+        else { Say("usage : audio-listen [1..600] [--device=<id>] [--mirror-at=<s>]"); return 2; }
+    }
+    if (listenSeconds is < 1 or > 600) { Say("usage : audio-listen [1..600] [--device=<id>] [--mirror-at=<s>]"); return 2; }
+    return await AudioTools.ListenAsync(listenSeconds, listenDevice, listenMirrorAt, DefaultDdiFolder, Say);
+}
+
 UsbmuxClient mux;
 try
 {
@@ -1131,14 +1154,31 @@ using (mux)
             bool audioWithVideo = false;
             string audioDirection = "output";
             int audioSettleMs = AudioTools.DefaultSettleMs;
+            var audioPresses = new List<(string Button, int AtSecond)>();
+            string audioStop = "session";
+            int audioHold = 0;
+            int audioRecycle = 0;
+            bool audioUnpaired = false;
             foreach (string argument in args[1..])
             {
                 if (argument.StartsWith("--variant=", StringComparison.OrdinalIgnoreCase))
                     audioVariant = argument[10..];
+                else if (argument.StartsWith("--press=", StringComparison.OrdinalIgnoreCase)
+                    && argument[8..].Split('@') is [var pressName, var pressAt]
+                    && int.TryParse(pressAt, out int pressSecond))
+                    audioPresses.Add((pressName, pressSecond));
                 else if (argument.StartsWith("--direction=", StringComparison.OrdinalIgnoreCase))
                     audioDirection = argument[12..];
                 else if (argument.StartsWith("--settle=", StringComparison.OrdinalIgnoreCase))
                     audioSettleMs = int.Parse(argument[9..]);
+                else if (argument.StartsWith("--stop=", StringComparison.OrdinalIgnoreCase))
+                    audioStop = argument[7..].ToLowerInvariant();
+                else if (argument.StartsWith("--hold=", StringComparison.OrdinalIgnoreCase))
+                    audioHold = int.Parse(argument[7..]);
+                else if (argument.StartsWith("--recycle=", StringComparison.OrdinalIgnoreCase))
+                    audioRecycle = int.Parse(argument[10..]);
+                else if (argument.Equals("--unpaired", StringComparison.OrdinalIgnoreCase))
+                    audioUnpaired = true;
                 else if (argument.Equals("--video", StringComparison.OrdinalIgnoreCase))
                     audioWithVideo = true;
                 else if (int.TryParse(argument, out int parsed))
@@ -1153,7 +1193,7 @@ using (mux)
                 return 2;
             }
             int audioCode = await AudioTools.RunAsync(audioSeconds, audioCapture, audioVariant, audioWithVideo,
-                audioDirection, audioSettleMs, DefaultDdiFolder, Say);
+                audioDirection, audioSettleMs, audioPresses, audioStop, audioHold, audioRecycle, audioUnpaired, DefaultDdiFolder, Say);
             if (audioCode != 0) return audioCode;
             break;
         }

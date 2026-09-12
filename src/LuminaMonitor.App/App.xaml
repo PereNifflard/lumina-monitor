@@ -144,6 +144,28 @@
             <Setter Property="FontSize" Value="11.5" />
         </Style>
 
+        <!-- Le bouton principal de la barre : le bouton d'accueil. Plein et non
+             transparent, parce que c'est le seul geste que tout le monde fait et
+             qu'il doit se voir sans etre cherche. Fond accent, texte sombre : le
+             contraste inverse des autres, ce qui le detache d'un coup d'oeil. -->
+        <Style x:Key="PrimaryBarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{StaticResource Primary}" />
+            <Setter Property="Foreground" Value="{StaticResource OnPrimary}" />
+            <Setter Property="Padding" Value="20,9" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <!-- Bouton secondaire de la barre : pictogramme seul, sans mot, dans un
+             gris plus retenu. Le nom passe par l'infobulle et par le nom
+             accessible — ce sont des gestes occasionnels, ils n'ont pas a peser
+             autant que l'accueil. -->
+        <Style x:Key="IconBarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Foreground" Value="{StaticResource Outline}" />
+        </Style>
+
         <!-- Interrupteur : une case a cocher habillee. CheckBox et non
              ToggleButton pour ce que l'accessibilite en dit (motif Toggle,
              « case a cocher » pour un lecteur d'ecran). Le nom lisible est pose

@@ -146,6 +146,19 @@ internal sealed class MediaSession
     /// </remarks>
     public XpcUuid SessionId => _sessionId;
 
+    /// <summary>
+    /// A session the orphan guard must leave alone when this stream opens.
+    /// </summary>
+    /// <remarks>
+    /// For the order that matters: an audio stream opened <em>first</em>, on its
+    /// own session, and already carrying sound when the picture is asked for.
+    /// The guard on the way in releases every session it finds, which without
+    /// this takes that audio stream down the instant the mirror starts —
+    /// measured on 11 September 2026, the packets stopping dead rather than
+    /// going silent. Naming the audio session here spares it.
+    /// </remarks>
+    public XpcUuid? SpareSessionId { get; set; }
+
     public MediaStats Stats
     {
         get
@@ -227,7 +240,7 @@ internal sealed class MediaSession
         // offer over it ("a phone or VoIP call is in progress"). There is no
         // cleanup on the way out that a kill cannot skip, so the guard is on
         // the way in. See MediaHygiene.
-        if (await MediaHygiene.ReleaseOrphansAsync(_rsd, Say) > 0)
+        if (await MediaHygiene.ReleaseOrphansAsync(_rsd, Say, SpareSessionId) > 0)
             await Task.Delay(SettleMs);
 
         _display = await _rsd.OpenAsync(DisplayService.ServiceName, serviceTrace);

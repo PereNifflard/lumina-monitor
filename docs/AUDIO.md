@@ -196,6 +196,16 @@ So: **the PC's microphone cannot be sent to the phone through CoreDevice.** What
 and does it is the Bluetooth hands-free profile already mounted on this PC (§4c): in that mode,
 the phone hears the PC's microphone. No virtual driver is proposed here.
 
+**Re-measured on 11 September 2026**, because the question was asked again and a year-old note is
+not evidence. `audio-info --direction=input` on iOS 27: the offer is **accepted** and the answer
+echoes `direction = input` — and then configures the same outbound stream as ever,
+`source: audioSystemOutput`, `RxPayloadType = 101`, a port for the phone to *send* on. The word is
+taken and ignored. The capability list is unchanged and still exhaustive: six features, every one
+of them an output or a read. This is a different kind of refusal from Apple Music's, and worth
+telling apart: there the phone *can* send the sound and declines to while a display stream is up,
+a policy gate; here the capability does not exist in the daemon at all. Nothing on this path will
+carry a microphone, however it is asked.
+
 ## 6. Orphaned media sessions — and the phone's microphone
 
 Reported symptom: **after a mirroring session, the phone's microphone seems disabled for its
@@ -508,6 +518,19 @@ of that order are deliberate:
 - **a refusal is not fatal.** The picture stays, the panel says why, and `OpenAudioAsync` can be
   called again from the panel's own button. The audio rung is the only one in this ladder that cannot
   fail the climb;
+- **the sound stops without `stopmediastream`.** That call names a *session*, the audio stream
+  shares the video's, and the first version sent it when the sound was switched off — the picture
+  went with it a second later (11 September 2026, window log). Measured the other way the same day
+  with `audio-info --video --stop=bye --hold=25`: receiver reports stopped and a BYE sent, the
+  picture keeps its 117 packets/s, the phone keeps sending audio for the twenty seconds of its
+  RTCP timeout and then ends that stream on its own, and the status afterwards lists the video and
+  nothing else. So `AudioStream.StopAsync` tells the daemon nothing; twenty seconds of a capture
+  nobody decodes is the price of a picture that stays. The session's own end still stops the whole
+  session, audio included, through the video's stop;
+- **a video restart reattaches the sound.** The restart stops the shared session, so the audio stream
+  dies with it: `DeviceSession` lets it go first (without touching the Mute key — the count stands,
+  the phone stays silenced across the gap) and opens a new one on the new session once the picture
+  is back;
 - **the guard stays at the entry.** `AudioSession.StartAsync` still releases orphaned media sessions
   before opening its own, sparing the video session it is joining (§6). That matters more for audio
   than for video: an audio session iOS was never told to end is a system-audio capture it has not
@@ -522,8 +545,10 @@ default — and that fill *is* the delay setting. Three rules, all of them count
 - **under-run**: the output asks for samples that are not there. It gets silence, the count goes up
   by one, and the queue goes back to priming — one longer gap rather than a series of short ones;
 - **drift**: the two clocks are not the same clock, so over minutes one of them wins. Past the target
-  plus three frames (30 ms of margin), the **oldest** frame is dropped and counted. Nothing
-  accumulates without bound;
+  plus three frames (30 ms of margin), the **oldest** frames are dropped, back down to the target in
+  one cut, and counted. One cut, not one per arrival: the first version trimmed only to the margin
+  and then cut once per frame for as long as the phone's burst lasted — fifteen cuts in ten seconds
+  around a screen lock, 11 September 2026. Nothing accumulates without bound;
 - **loss**: a gap in the RTP sequence is filled with that many silent frames, up to 200 ms, so the
   timeline does not shorten. A frame the decoder refuses is queued all the same — what it holds is
   the fading tail of the overlap, which is quieter than a click. Skipping instead would play
@@ -549,6 +574,47 @@ communications one is a virtual cable feeding something else. A chosen endpoint 
 answered by the default one, once, with a line in the journal. Volume and mute are a gain applied to
 the samples on the way out, never the system mixer: that endpoint is shared with everything else on
 the machine.
+
+### The phone's own speaker
+
+The stream is a tap, not a rerouting: the phone goes on playing in the room while the same sound
+plays in the headphones a hundred milliseconds later. The idea was to press the phone's Mute key so
+the room stays quiet, and a first measurement seemed to bless it — `audio-info 12 --press=mute@4
+--press=mute@8`, **audio stream alone**, kept the capture's RMS full through the mute (0.26 · 0.22 ·
+0.22), which reads as "the tap sits before the volume."
+
+**That measurement was missing the mirror, and it was wrong.** Repeated with the display stream up —
+`audio-info 15 --video --press=mute@4 --press=mute@10` — the per-second RMS is 0.08 · 0.07 · 0.06 and
+then **0.000 from the fourth second on**, the instant Mute is pressed, and the second press meant to
+undo it changes nothing; volume-down (`--press=volume-down`) does exactly the same. With a display
+stream running, a Consumer volume/mute event makes some apps — Apple Music above all — stop feeding
+the system-audio capture **for good**, while still playing to the speaker. The phone is heard, the
+headphones are silent: the opposite of the goal, and the fresh-stream captures that always sounded
+fine were the ones with no video beside them. Silencing the phone and capturing its sound are
+mutually exclusive for those apps, so `AudioOptions.SilencePhone` is **off by default** (the panel's
+"Silence the iPhone meanwhile", with a warning); left off, nothing touches the phone and the capture
+stays whole. The one figure that catches this in the app is the decoded peak level, in every counters
+line as `niveau …`: `niveau silence` while the phone plainly plays is this fault.
+
+### Apple Music, and content protection
+
+There is one source the sound path cannot carry, and it is not our doing: **Apple Music, while the
+mirror is up.** Measured on 11 September 2026, a clean single stream, no mute pressed, nothing
+touched — `audio-info 40 --video` on a playing Apple Music track — the decoded per-second RMS reads
+0.20 · 0.21 · 0.14 and then **0.000 for the remaining thirty-seven seconds**: the phone keeps sending
+its hundred frames a second, every one of them decoded without error, every one of them silence,
+while the track plays on out of the phone's own speaker. Roughly three seconds of sound, then
+nothing.
+
+The trigger is the **display stream**. Without it — `audio-info` with no `--video` — the same track
+captures full for as long as it is watched. With it, iOS treats the media stream as a screen
+recording, and Apple Music is DRM-protected against screen recording: after a few seconds' grace it
+stops feeding its audio into the captured route and plays only to the speaker. This is the same
+reason a local screen recording of an iPhone is silent under Apple Music. There is no field in the
+negotiation to turn content protection off, and there should not be; nothing here will try. Sources
+that are not protected — a browser, a game, most apps — are unaffected, which is why every other
+source works. `niveau silence` under a playing Apple Music track is this, and it is a wall on Apple's
+side, not a bug on ours.
 
 ### What it counts, and where to read it
 

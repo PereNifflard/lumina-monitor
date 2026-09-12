@@ -32,6 +32,11 @@ namespace LuminaMonitor.Core.Audio;
 /// <param name="Device">The output actually in use, as Windows names it.</param>
 /// <param name="Format">The format it is being fed in.</param>
 /// <param name="SkewMs">Sound minus picture, in milliseconds; NaN until both streams have reported.</param>
+/// <param name="PeakLevel">
+/// The loudest decoded sample since the last read, full scale 1.0: the one figure
+/// that tells music from silence when the packet count cannot, because the phone
+/// sends a hundred frames a second either way.
+/// </param>
 public readonly record struct AudioStats(
     bool Streaming,
     string? Failure,
@@ -47,8 +52,18 @@ public readonly record struct AudioStats(
     double OutputLatencyMs,
     string Device,
     string Format,
-    double SkewMs)
+    double SkewMs,
+    float PeakLevel = 0f)
 {
+    /// <summary>
+    /// The peak in decibels below full scale, or a word for a level so low it is
+    /// silence — the reading that says whether a cut is the content or the chain.
+    /// </summary>
+    public string LevelText => PeakLevel <= 0.0001f
+        ? "silence"
+        : string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"{20.0 * Math.Log10(PeakLevel):0} dBFS");
+
     /// <summary>A one-line summary for the journal, French like every other log line.</summary>
     public override string ToString() =>
         $"{(Streaming ? "ouvert" : Failure is null ? "coupe" : "refuse")}"
@@ -57,6 +72,7 @@ public readonly record struct AudioStats(
         + $"  pertes {FramesLost}  desordre {PacketsOutOfOrder}"
         + $"  sous-alim {Underruns}  sauts {FramesSkipped}"
         + $"  file {QueuedMs:F0} / cible {TargetMs:F0} ms"
+        + $"  niveau {LevelText}"
         + $"  latence sortie {OutputLatencyMs:F1} ms"
         + $"  peripherique « {Device} » {Format}"
         + (double.IsNaN(SkewMs) ? "  desynchro n/a" : $"  desynchro son-image {SkewMs:+0;-0;0} ms");

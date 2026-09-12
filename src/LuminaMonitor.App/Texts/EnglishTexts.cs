@@ -145,6 +145,9 @@ internal sealed class EnglishTexts : Texts
     public override string WakeFailed(string error) => $"wake: {error}";
     public override string ScreenOnUnlockYourself =>
         "Screen on — unlocking needs your face, or your passcode on the phone.";
+    public override string PasscodeHint =>
+        "iPhone locked. If Face ID doesn't unlock it, type your passcode on your keyboard — iOS keeps " +
+        "the keypad out of the mirror.";
     public override string Unlocking(int characters) => $"Unlocking: swipe, then {characters} passcode character(s)…";
     public override string CodeSent => "Passcode sent. If the screen stays locked, it's the passcode or Face ID that's needed.";
 
@@ -189,20 +192,18 @@ internal sealed class EnglishTexts : Texts
     public override string AudioOutput => "Output";
     public override string AudioDefaultOutput => "Windows default output";
     public override string AudioVolume => "Volume";
-    public override string AudioMute => "Mute";
     public override string AudioDelay => "Delay";
     public override string AudioDelayHint =>
         "Holds the sound back to line it up with the picture. Raise it if the sound arrives first.";
     public override string AudioRetry => "Try again";
     public override string AudioMilliseconds(double milliseconds) => string.Create(C, $"{milliseconds:0} ms");
 
-    public override string AudioOff => "Sound off — the phone is not asked for any.";
-    public override string AudioNoSession => "No mirror yet: the sound opens with it.";
-    public override string AudioOpening => "Opening the sound stream…";
+    public override string AudioOff => "Sound off — it plays on the iPhone instead.";
+    public override string AudioNoSession => "No mirror yet: the sound comes with it.";
+    public override string AudioOpening => "Opening the sound…";
     public override string AudioRefused(string reason) => $"No sound: {reason}";
-    public override string AudioRunning(string device, double queuedMs, long underruns) =>
-        string.Create(C, $"Playing on {device}  ·  buffer {queuedMs:0} ms")
-        + (underruns > 0 ? string.Create(C, $"  ·  {underruns} gap(s)") : "");
+    public override string AudioRunning(string device, string level) =>
+        $"Playing on {device}  ·  {level}";
 
     public override string DimGestureInvalid => "dimGesture needs five numbers — brightness left alone.";
     public override string OpeningControlCentre => "Opening Control Center…";

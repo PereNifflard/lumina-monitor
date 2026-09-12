@@ -18,8 +18,8 @@ namespace LuminaMonitor.Core.Audio;
 ///
 /// <para><b>Drift.</b> The two clocks are not the same clock, so over minutes
 /// one of them wins. A queue that keeps growing is answered by dropping its
-/// oldest frame once it is <see cref="Slack"/> frames past the target — thirty
-/// milliseconds of margin before ten are thrown away — and a queue that keeps
+/// oldest frames once it is <see cref="Slack"/> frames past the target — thirty
+/// milliseconds of margin, then back down to the target in one cut — and a queue that keeps
 /// emptying is answered by silence and a counter. Neither is hidden: both are in
 /// <see cref="AudioStats"/>, because an unexplained tick every few minutes is
 /// exactly the kind of fault that gets blamed on the decoder.</para>
@@ -109,15 +109,25 @@ internal sealed class AudioJitterBuffer
     {
         lock (_gate)
         {
-            // Over target: the oldest frame goes, which is the one whose absence
-            // costs the least — it is the furthest in the past.
-            while (_ready.Count > _target + Slack || _free.Count == 0)
+            // Over target by the whole margin: back down to the target in one
+            // go, oldest frames first — they are the ones whose absence costs
+            // the least, being the furthest in the past. One go, not one frame
+            // per arrival: the first version trimmed to target-plus-margin and
+            // then dropped one frame for every frame the burst still brought,
+            // which is one audible cut per frame for as long as the burst lasts
+            // (fifteen in ten seconds around a screen lock, 11 September 2026).
+            // A burst is the phone catching up after a pause of its own — the
+            // volume HUD, a lock — and the catching-up is done once.
+            if (_ready.Count > _target + Slack || _free.Count == 0)
             {
-                if (_ready.Count == 0)
-                    break;
-                _free.Enqueue(_ready.Dequeue());
-                _readAt = 0;
-                _skipped++;
+                while (_ready.Count > _target || _free.Count == 0)
+                {
+                    if (_ready.Count == 0)
+                        break;
+                    _free.Enqueue(_ready.Dequeue());
+                    _readAt = 0;
+                    _skipped++;
+                }
             }
             slot = _free.Count > 0 ? _free.Dequeue() : _ready.Dequeue();
             return _slots[slot];

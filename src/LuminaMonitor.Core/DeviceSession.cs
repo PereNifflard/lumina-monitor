@@ -50,6 +50,7 @@ public sealed partial class DeviceSession : IAsyncDisposable
     private UsbmuxClient? _mux;
     private UsbmuxClient? _lockdownPipe;
     private UsbmuxClient? _servicePipe;
+    private NotificationProxy? _lockNotifier;
     private CdTunnel? _tunnel;
     private TunnelNet? _net;
     private Rsd? _rsd;
@@ -220,6 +221,28 @@ public sealed partial class DeviceSession : IAsyncDisposable
     public async Task WakeScreenAsync()
     {
         await Input.PressButtonAsync("home");
+        ScreenLit("depuis le PC");
+    }
+
+    /// <summary>
+    /// The screen is on, whoever lit it: the pictures are back at a lit
+    /// screen's rate.
+    /// </summary>
+    /// <remarks>
+    /// The sleep flag is set by this session and, until 11 September 2026, was
+    /// cleared only by <see cref="WakeScreenAsync"/>. But a screen put out from
+    /// here comes back three other ways — the home button of the window's
+    /// chassis, a thumb on the real phone, Face ID — and none of them passes
+    /// through that method, so the flag outlived the sleep and the window kept
+    /// a "locked" banner over a picture that was plainly moving. The picture
+    /// rate is the one witness that sees every wake; the window watches it and
+    /// reports here, and the flag follows the screen instead of the last
+    /// button this session pressed.
+    /// </remarks>
+    public void NoticeScreenLit() => ScreenLit("vu au retour des images");
+
+    private void ScreenLit(string how)
+    {
         if (!ScreenAsleep)
             return;
         ScreenAsleep = false;
@@ -230,8 +253,10 @@ public sealed partial class DeviceSession : IAsyncDisposable
             // is put back to the bottom rather than left deaf for the rest of
             // the session.
             _media?.RearmWatch();
-            Info($"Ecran reveille : veille du flux rearmee ({_stallsWhileAsleep} alerte(s) ignoree(s) pendant le sommeil).");
+            Info($"Ecran reveille ({how}) : veille du flux rearmee ({_stallsWhileAsleep} alerte(s) ignoree(s) pendant le sommeil).");
         }
+        else
+            Info($"Ecran reveille ({how}).");
         _stallsWhileAsleep = 0;
         ScreenSleepChanged?.Invoke(false);
     }
@@ -372,6 +397,12 @@ public sealed partial class DeviceSession : IAsyncDisposable
             await ValueAsync(lockdown, "BuildVersion"));
         Info($"Session TLS ouverte : {Device.Name ?? "?"}, {Device.ProductType ?? "?"} {Device.ProductVersion ?? "?"} ({Device.BuildVersion ?? "?"}).");
         Enter(SessionState.Paired);
+
+        // The lock notifier, on the trusted session and nothing else — it needs
+        // neither the developer image nor the tunnel, so it starts here and keeps
+        // the passcode banner honest whatever the frame rate does. Best effort:
+        // if the service refuses, the banner falls back to the dark-screen guess.
+        await StartLockNotifierAsync(deviceId, lockdown, record);
 
         // 2) Developer Mode, read where the switch itself lives.
         var amfi = await lockdown.GetValueRawAsync("DeveloperModeStatus", "com.apple.security.mac.amfi");
@@ -516,8 +547,14 @@ public sealed partial class DeviceSession : IAsyncDisposable
 
             case StallAction.RestartStream:
                 Warn($"Toujours rien {StreamWatchdog.KeyFrameGraceSeconds:0} s apres l'image cle : relance de la session media.");
+                // The sound shares the session being restarted, so the stop
+                // takes it down too: it is let go first, and reattached to the
+                // new session once the picture is back.
+                await DetachAudioAsync();
                 if (await media.RestartAsync() is StallAction.SoftReset)
                     goto case StallAction.SoftReset;
+                if (media.Streaming)
+                    OpenAudioAfterVideo(media);
                 break;
 
             case StallAction.SoftReset:
@@ -633,7 +670,8 @@ public sealed partial class DeviceSession : IAsyncDisposable
         // The sound first: its stream lives on the same daemon and is attached to
         // the video session, so it is told to stop while that session still
         // exists — and while iOS still has a capture session to hand back.
-        await CloseAudioAsync();
+        await CloseAudioAsync("fin de session (Release)");
+        StopLockNotifier();
         if (_media is not null) { try { await _media.StopAsync(); } catch (Exception) { } _media = null; }
         if (_input is not null)
         {

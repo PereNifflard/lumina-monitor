@@ -141,6 +141,9 @@ internal sealed class FrenchTexts : Texts
     public override string WakeFailed(string error) => $"réveil : {error}";
     public override string ScreenOnUnlockYourself =>
         "Écran allumé — le déverrouillage demande ton visage, ou ton code sur le téléphone.";
+    public override string PasscodeHint =>
+        "iPhone verrouillé. Si Face ID ne le déverrouille pas, tape ton code sur ton clavier — iOS " +
+        "n'affiche pas le pavé dans le miroir.";
     public override string Unlocking(int characters) => $"Déverrouillage : balayage puis {characters} caractère(s) de code…";
     public override string CodeSent => "Code envoyé. Si l'écran reste verrouillé, c'est le code ou Face ID qu'il faut.";
 
@@ -185,20 +188,18 @@ internal sealed class FrenchTexts : Texts
     public override string AudioOutput => "Sortie";
     public override string AudioDefaultOutput => "Sortie par défaut de Windows";
     public override string AudioVolume => "Volume";
-    public override string AudioMute => "Muet";
     public override string AudioDelay => "Retard";
     public override string AudioDelayHint =>
         "Retient le son pour l'aligner sur l'image. À augmenter si le son arrive avant.";
     public override string AudioRetry => "Réessayer";
     public override string AudioMilliseconds(double milliseconds) => $"{milliseconds:0} ms";
 
-    public override string AudioOff => "Son coupé — le téléphone n'est pas sollicité.";
-    public override string AudioNoSession => "Pas encore de miroir : le son s'ouvre avec lui.";
-    public override string AudioOpening => "Ouverture du flux audio…";
+    public override string AudioOff => "Son coupé — il joue sur l'iPhone à la place.";
+    public override string AudioNoSession => "Pas encore de miroir : le son vient avec lui.";
+    public override string AudioOpening => "Ouverture du son…";
     public override string AudioRefused(string reason) => $"Pas de son : {reason}";
-    public override string AudioRunning(string device, double queuedMs, long underruns) =>
-        $"Lecture sur {device}  ·  file {queuedMs:0} ms"
-        + (underruns > 0 ? $"  ·  {underruns} coupure(s)" : "");
+    public override string AudioRunning(string device, string level) =>
+        $"Lecture sur {device}  ·  {level}";
 
     public override string DimGestureInvalid => "dimGesture attend cinq nombres — luminosité ignorée.";
     public override string OpeningControlCentre => "Ouverture du centre de contrôle…";

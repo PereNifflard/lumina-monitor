@@ -166,6 +166,7 @@ internal abstract class Texts
     public abstract string WakingScreen { get; }
     public abstract string WakeFailed(string error);
     public abstract string ScreenOnUnlockYourself { get; }
+    public abstract string PasscodeHint { get; }
     public abstract string Unlocking(int characters);
     public abstract string CodeSent { get; }
 
@@ -211,7 +212,6 @@ internal abstract class Texts
     public abstract string AudioOutput { get; }
     public abstract string AudioDefaultOutput { get; }
     public abstract string AudioVolume { get; }
-    public abstract string AudioMute { get; }
     public abstract string AudioDelay { get; }
     public abstract string AudioDelayHint { get; }
     public abstract string AudioRetry { get; }
@@ -222,7 +222,7 @@ internal abstract class Texts
     public abstract string AudioNoSession { get; }
     public abstract string AudioOpening { get; }
     public abstract string AudioRefused(string reason);
-    public abstract string AudioRunning(string device, double queuedMs, long underruns);
+    public abstract string AudioRunning(string device, string level);
 
     // --- Brightness -------------------------------------------------------------------------------
 

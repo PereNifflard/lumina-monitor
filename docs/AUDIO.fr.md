@@ -194,6 +194,16 @@ Donc : **on ne peut pas envoyer le micro du PC vers le téléphone par CoreDevic
 et le fait, c'est le profil mains-libres Bluetooth déjà monté sur ce PC (§ 4c) : dans ce mode, le
 téléphone entend le micro du PC. Aucun pilote virtuel n'est proposé ici.
 
+**Re-mesuré le 11 septembre 2026**, parce que la question a été reposée et qu'une note d'hier n'est
+pas une preuve. `audio-info --direction=input` sous iOS 27 : l'offre est **acceptée** et la réponse
+renvoie bien `direction = input` — puis configure le même flux sortant que d'habitude,
+`source: audioSystemOutput`, `RxPayloadType = 101`, un port pour que le téléphone *émette*. Le mot
+est pris et ignoré. La liste des capacités est inchangée et toujours exhaustive : six fonctions,
+toutes sortantes ou en lecture. C'est un refus d'une autre nature que celui d'Apple Music, et il
+vaut la peine de les distinguer : là, le téléphone *sait* envoyer le son et s'y refuse tant qu'un
+flux d'affichage est ouvert — une porte de politique ; ici, la capacité n'existe tout simplement pas
+dans le démon. Rien sur ce chemin ne portera un micro, quelle que soit la façon de le demander.
+
 ## 6. Sessions média orphelines — et le micro du téléphone
 
 Symptôme rapporté : **après une session de miroir, le micro du téléphone semble désactivé pour ses
@@ -508,6 +518,19 @@ de cet ordre sont voulues :
 - **un refus n'est pas fatal.** L'image reste, le panneau dit pourquoi, et `OpenAudioAsync` peut être
   rappelé depuis le bouton du panneau. Le barreau audio est le seul de cette échelle qui ne peut pas
   faire échouer la montée ;
+- **le son s'arrête sans `stopmediastream`.** Cet appel nomme une *session*, le flux audio partage
+  celle de la vidéo, et la première version l'envoyait quand on coupait le son — l'image partait avec
+  une seconde plus tard (11 septembre 2026, journal de la fenêtre). Mesuré dans l'autre sens le même
+  jour avec `audio-info --video --stop=bye --hold=25` : rapports de réception arrêtés et BYE envoyé,
+  l'image garde ses 117 paquets/s, le téléphone continue d'envoyer l'audio pendant les vingt secondes
+  de son délai RTCP puis termine ce flux seul, et l'état d'après ne liste plus que la vidéo. Donc
+  `AudioStream.StopAsync` ne dit rien au démon ; vingt secondes d'une capture que personne ne décode
+  sont le prix d'une image qui reste. La fin de la session, elle, arrête toujours la session entière,
+  audio compris, par l'arrêt de la vidéo ;
+- **une relance vidéo rattache le son.** La relance arrête la session partagée, donc le flux audio
+  meurt avec elle : `DeviceSession` le lâche d'abord (sans toucher à la touche Muet — le compte tient,
+  le téléphone reste en sourdine pendant le trou) et en ouvre un nouveau sur la nouvelle session dès
+  que l'image est revenue ;
 - **la garde reste à l'entrée.** `AudioSession.StartAsync` libère toujours les sessions média
   orphelines avant d'ouvrir la sienne, en épargnant la session vidéo qu'elle rejoint (§6). Cela compte
   plus pour l'audio que pour la vidéo : une session audio qu'iOS n'a jamais eu l'ordre de terminer est
@@ -525,8 +548,11 @@ comptées :
   silence, le compteur avance d'un, et la file repart en amorçage — un trou plus long plutôt qu'une
   série de courts ;
 - **dérive** : les deux horloges ne sont pas la même, donc au bout de quelques minutes l'une gagne.
-  Au-delà de la cible plus trois trames (30 ms de marge), la trame **la plus ancienne** est jetée et
-  comptée. Rien ne s'accumule sans borne ;
+  Au-delà de la cible plus trois trames (30 ms de marge), les trames **les plus anciennes** sont
+  jetées, jusqu'à revenir à la cible en une seule coupure, et comptées. Une coupure, pas une par
+  arrivée : la première version ne rognait que jusqu'à la marge puis coupait une fois par trame tant
+  que durait la rafale du téléphone — quinze coupures en dix secondes autour d'un verrouillage
+  d'écran, le 11 septembre 2026. Rien ne s'accumule sans borne ;
 - **perte** : un trou dans les numéros de séquence RTP est comblé par autant de trames silencieuses,
   jusqu'à 200 ms, pour que la ligne du temps ne raccourcisse pas. Une trame que le décodeur refuse est
   mise en file quand même — ce qu'elle contient est la queue du recouvrement qui s'éteint, plus
@@ -553,6 +579,48 @@ des communications est un câble virtuel qui alimente autre chose. Un périphér
 se voit remplacé par le défaut, une fois, avec une ligne au journal. Volume et sourdine sont un gain
 appliqué aux échantillons à la sortie, jamais le mélangeur système : ce périphérique est partagé avec
 tout le reste de la machine.
+
+### Le haut-parleur du téléphone
+
+Le flux est une prise, pas un détournement : le téléphone continue de jouer dans la pièce pendant que
+le même son joue dans le casque cent millisecondes plus tard. L'idée était de presser la touche Muet
+du téléphone pour garder la pièce silencieuse, et une première mesure semblait la bénir — `audio-info
+12 --press=mute@4 --press=mute@8`, **flux audio seul**, gardait le RMS de la capture plein pendant le
+mute (0,26 · 0,22 · 0,22), ce qui se lit « la prise est avant le volume ».
+
+**Cette mesure était sans le miroir, et elle était fausse.** Refaite avec le flux d'affichage actif —
+`audio-info 15 --video --press=mute@4 --press=mute@10` — le RMS par seconde vaut 0,08 · 0,07 · 0,06
+puis **0,000 dès la quatrième seconde**, à l'instant de l'appui Muet, et le second appui censé le
+défaire n'y change rien ; volume-baisse (`--press=volume-down`) fait exactement pareil. Avec un flux
+d'affichage actif, un événement de volume/muet Consumer fait que certaines apps — Apple Music au
+premier chef — cessent d'alimenter la capture du son système **définitivement**, tout en jouant au
+haut-parleur. Le téléphone est entendu, le casque muet : l'opposé du but, et les captures de flux
+neuf qui sonnaient toujours bien étaient celles sans vidéo à côté. Faire taire le téléphone et
+capturer son son sont incompatibles pour ces apps, donc `AudioOptions.SilencePhone` est **désactivé
+par défaut** (l'interrupteur « Faire taire l'iPhone pendant ce temps » du panneau, avec un
+avertissement) ; laissé désactivé, rien ne touche le téléphone et la capture reste entière. Le seul
+chiffre qui l'attrape dans l'app est le niveau crête décodé, sur chaque ligne de compteurs en
+`niveau …` : `niveau silence` alors que le téléphone joue de toute évidence, c'est ce défaut.
+
+### Apple Music, et la protection de contenu
+
+Il y a une source que la chaîne audio ne peut pas transporter, et ce n'est pas de notre fait :
+**Apple Music, quand le miroir est actif.** Mesuré le 11 septembre 2026, un flux unique et propre,
+aucun Muet pressé, rien touché — `audio-info 40 --video` sur un morceau Apple Music en lecture — le
+RMS par seconde décodé vaut 0,20 · 0,21 · 0,14 puis **0,000 pendant les trente-sept secondes
+restantes** : le téléphone continue d'envoyer ses cent trames par seconde, toutes décodées sans
+erreur, toutes silencieuses, pendant que le morceau joue au haut-parleur du téléphone. Environ trois
+secondes de son, puis plus rien.
+
+Le déclencheur est le **flux d'affichage**. Sans lui — `audio-info` sans `--video` — le même morceau
+se capture plein tant qu'on l'écoute. Avec lui, iOS traite le flux média comme un enregistrement
+d'écran, et Apple Music est protégé par DRM contre l'enregistrement d'écran : après quelques secondes
+de grâce, il cesse d'alimenter la route captée et ne joue plus qu'au haut-parleur. C'est la même
+raison qui rend muet un enregistrement d'écran d'iPhone sous Apple Music. Il n'existe aucun champ
+dans la négociation pour désactiver la protection de contenu, et il ne doit pas en exister ; rien ici
+ne tentera de le faire. Les sources non protégées — un navigateur, un jeu, la plupart des apps — ne
+sont pas concernées, et c'est pourquoi toutes les autres sources marchent. `niveau silence` sous un
+morceau Apple Music en lecture, c'est cela : un mur du côté d'Apple, pas un défaut du nôtre.
 
 ### Ce qu'elle compte, et où le lire
 

@@ -698,8 +698,26 @@ public partial class MainWindow : Window
         session.StateChanged += state => Dispatcher.InvokeAsync(() => AdoptState(state));
         // The banner itself is decided once a second in WatchDarkScreen, which
         // also sees the phone locking itself; this only makes it immediate when
-        // the sleep came from here.
-        session.ScreenSleepChanged += _ => Dispatcher.InvokeAsync(DecideDarkScreen);
+        // the sleep came from here. The rate window is restarted at the sleep,
+        // so the second that follows counts only what a dark screen sends:
+        // the twenty frames from before the press would otherwise pass for a
+        // lit screen and take the banner straight back down.
+        session.ScreenSleepChanged += asleep => Dispatcher.InvokeAsync(() =>
+        {
+            if (asleep)
+            {
+                _upkeepFrames = Interlocked.Read(ref _framesReceived);
+                _trickleSeconds = 0;
+            }
+            DecideDarkScreen();
+        });
+        // The phone's own word on whether it is locked — the authority for the
+        // passcode banner when the service is up, replacing the frame-rate guess.
+        session.PhoneLockChanged += locked => Dispatcher.InvokeAsync(() =>
+        {
+            _phoneLikelyLocked = locked;
+            RefreshPasscodeBanner();
+        });
         session.UnlockRequired += message => Dispatcher.InvokeAsync(() => ShowUnlockBanner(message));
         session.RestartRequired += message => Dispatcher.InvokeAsync(() =>
         {
@@ -778,7 +796,8 @@ public partial class MainWindow : Window
         _heldKeys.Clear();
         _screenDark = false;
         _trickleSeconds = 0;
-        LockBanner.Visibility = Visibility.Collapsed;
+        _phoneLikelyLocked = false;
+        HidePasscodeHint();
         var session = _session;
         _session = null;
         _input = null;
@@ -817,7 +836,8 @@ public partial class MainWindow : Window
             // banner would go on claiming a lock nobody can undo from here.
             _screenDark = false;
             _trickleSeconds = 0;
-            LockBanner.Visibility = Visibility.Collapsed;
+            _phoneLikelyLocked = false;
+            HidePasscodeHint();
         }
 
         Report(t => t.Step(state));
@@ -1218,9 +1238,10 @@ public partial class MainWindow : Window
     /// Measured on 9 September 2026 with the probe's <c>chassis-test</c>: a lit
     /// screen, even a perfectly still one, sends forty to sixty pictures a
     /// second, and one whose screen has gone out sends <b>one</b> — two RTP
-    /// packets a second of an entirely black picture. Three is well inside that
-    /// gap, and a stream that has really died sends none at all, which is how
-    /// the two are told apart.
+    /// packets a second of an entirely black picture, or none once it settles.
+    /// Three is well inside the gap below a lit screen; a locked screen sits at
+    /// or under it, none included, and the session being up (not the frame rate)
+    /// is what tells a lock from a stream that truly died.
     /// </remarks>
     private const int DarkFramesPerSecond = 3;
 
@@ -1249,6 +1270,7 @@ public partial class MainWindow : Window
             FlushPendingPress();
     }
 
+
     /// <summary>
     /// Whether the phone's screen is dark, whoever turned it out.
     /// </summary>
@@ -1266,7 +1288,24 @@ public partial class MainWindow : Window
         long frames = Interlocked.Read(ref _framesReceived);
         long arrived = frames - _upkeepFrames;
         _upkeepFrames = frames;
-        _trickleSeconds = arrived is > 0 and <= DarkFramesPerSecond ? _trickleSeconds + 1 : 0;
+        // Anything at or below the trickle counts toward "dark", zero included.
+        // The first version required at least one frame — a screen off sends a
+        // packet a second or two — but a phone locked by hand often drops to
+        // none at all, and that "> 0" made the count reset every second, so the
+        // banner never came up on a manual lock the way it does on ours (which
+        // sets ScreenAsleep outright). A hard stall also reaches zero, but the
+        // session is still up (_input is not null, checked in DecideDarkScreen),
+        // and the stream watchdog owns a stall; here the point is only the
+        // banner, and a dark screen is what a locked phone looks like from here.
+        _trickleSeconds = arrived <= DarkFramesPerSecond ? _trickleSeconds + 1 : 0;
+
+        // The other direction, and the one the session cannot see on its own:
+        // a full second of pictures at a lit screen's rate means the screen is
+        // on, whether the home button, a thumb or Face ID lit it. Told to the
+        // session, so that its own sleep flag — the second source of the
+        // banner — stops outliving the sleep it recorded.
+        if (arrived > DarkFramesPerSecond && _session is { ScreenAsleep: true } session)
+            session.NoticeScreenLit();
         DecideDarkScreen();
     }
 
@@ -1287,18 +1326,22 @@ public partial class MainWindow : Window
             return;
 
         _screenDark = dark;
-        RefreshLockBannerText();
 
         // The side button's label and accessible name follow the screen:
         // "Lock" over a lit one, "Wake screen" over a dark one.
         RefreshChassisTexts();
-        LockBanner.Visibility = dark ? Visibility.Visible : Visibility.Collapsed;
 
         if (dark)
         {
-            // The banner sits where the pointer would be aiming, and a finger on
-            // a sleeping screen does nothing anyway.
+            // A finger on a sleeping screen does nothing, so the pointer is
+            // handed back. The phone is now locked, and it stays locked in our
+            // eyes until it is driven (Engage clears the flag): a screen going
+            // dark is the one moment we can be sure of. The banner follows that
+            // flag, not the dark/lit state, so it survives the wake and the whole
+            // time the lock screen is up — which is exactly where the keypad is
+            // missing.
             Disengage();
+            _phoneLikelyLocked = true;
             Report(t => t.IPhoneLocked);
         }
         else if (_input is not null)
@@ -1307,12 +1350,55 @@ public partial class MainWindow : Window
             // because the session died is not a screen coming back on.
             Report(t => t.ScreenOn);
         }
+
+        RefreshPasscodeBanner();
         UpdateState();
     }
 
-    /// <summary>What the lock banner promises the wake button will do: it depends on the passcode.</summary>
-    private void RefreshLockBannerText() =>
-        LockBannerText.Text = _settings.UnlockCode.Length > 0 ? T.LockedWithCode : T.LockedWithoutCode;
+    /// <summary>
+    /// Puts the passcode banner up or down from the best lock signal available.
+    /// </summary>
+    /// <remarks>
+    /// When the phone's own lock notifier is running, its word is the authority
+    /// — the banner follows a real lock and a real unlock, lit lock screen and
+    /// all. When it is not (the service refused), it falls back to
+    /// <see cref="_phoneLikelyLocked"/>, latched on a dark screen and released on
+    /// the first drive. Either way the banner is only ever shown when no passcode
+    /// is stored, since a stored one is typed by the app and needs no prompt.
+    /// </remarks>
+    private void RefreshPasscodeBanner()
+    {
+        bool locked = _session is { LockServiceActive: true } session
+            ? session.PhoneLocked
+            : _phoneLikelyLocked;
+        if (locked && _input is not null && _settings.UnlockCode.Length == 0)
+            ShowPasscodeHint();
+        else
+            HidePasscodeHint();
+    }
+
+    /// <summary>
+    /// True from the moment the phone's screen goes dark until it is next driven:
+    /// our best read of "locked", and what the passcode banner follows.
+    /// </summary>
+    /// <remarks>
+    /// A screen going dark is the one lock signal we can trust from here; the lit
+    /// lock screen is indistinguishable from the home screen by the frame rate
+    /// alone. So the lock is latched on the dark, and released only when the phone
+    /// is driven — which cannot happen while it is locked. It errs toward showing
+    /// the banner a little too long (Face ID unlocked, but the person has not
+    /// touched anything yet) rather than not showing it when it is needed.
+    /// </remarks>
+    private bool _phoneLikelyLocked;
+
+    /// <summary>Shows the centre banner: the keypad is hidden, type the code on the keyboard.</summary>
+    private void ShowPasscodeHint()
+    {
+        PasscodeHintText.Text = T.PasscodeHint;
+        PasscodeHint.Visibility = Visibility.Visible;
+    }
+
+    private void HidePasscodeHint() => PasscodeHint.Visibility = Visibility.Collapsed;
 
     /// <summary>Is a picture actually arriving right now?</summary>
     private bool Mirroring =>
@@ -1723,16 +1809,17 @@ public partial class MainWindow : Window
         HintNote.Text = t.NothingToInstall;
 
         AppleDevicesButton.Content = t.OpenAppleDevices;
-        LockBannerTitle.Text = t.LockedTitle;
-        RefreshLockBannerText();
-        WakeButton.Content = t.WakeScreen;
 
         HomeButton.ToolTip = t.HomeTooltip;
         HomeLabel.Text = t.Home;
+        // The clipboard pair is icon-only now, secondary to Home: the name lives
+        // in the tooltip and the accessible name. Only the paste word shows, and
+        // only while a paste is running, to offer "Stop".
         PasteButton.ToolTip = t.ToIPhoneTooltip;
+        AutomationProperties.SetName(PasteButton, t.ToIPhone);
         PasteLabel.Text = _pasting ? t.StopPasting : t.ToIPhone;
         FetchButton.ToolTip = t.FromIPhoneTooltip;
-        FetchLabel.Text = t.FromIPhone;
+        AutomationProperties.SetName(FetchButton, t.FromIPhone);
         ApplyAudioTexts(t);
 
         UpdateState();
@@ -2665,6 +2752,10 @@ public partial class MainWindow : Window
                 try
                 {
                     await input.PressButtonAsync(button);
+                    // The session keeps count of the phone's Mute key while it
+                    // silences the phone behind the sound; a press from here
+                    // changes that count, and it must hear of it.
+                    _session?.NotePhoneButton(button);
                 }
                 catch (Exception)
                 {
@@ -3012,23 +3103,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnWakeClicked(object sender, RoutedEventArgs e)
-    {
-        if (_session is { } session && _input is not null)
-            await WakeNowAsync(session);
-    }
-
-    /// <summary>
-    /// A press that landed on the lock banner and nowhere else.
-    /// </summary>
-    /// <remarks>
-    /// The banner sits inside the screen's border, so without this the click that
-    /// asks for the screen to be woken would also be read as the click that takes
-    /// over the mouse — and the pointer would vanish over the very button the
-    /// hand is aiming at.
-    /// </remarks>
-    private void OnBannerDown(object sender, MouseButtonEventArgs e) => e.Handled = true;
-
     /// <summary>The side button, both ways round; a failure is also said on its label.</summary>
     private async Task SideButtonAsync(ChassisControl control)
     {
@@ -3148,6 +3222,12 @@ public partial class MainWindow : Window
             return;
 
         _engaged = true;
+
+        // Driving the phone means it is unlocked — a locked one does nothing with
+        // a touch. So this is the moment the "type your code" banner has done its
+        // job and goes, whether the code was typed by hand or Face ID let them in.
+        _phoneLikelyLocked = false;
+        HidePasscodeHint();
 
         // On the screen, not on the whole window: the floating bar has to keep a
         // pointer the hand can see, and the chassis is not a target.
@@ -3787,6 +3867,7 @@ public partial class MainWindow : Window
         _pasting = true;
         _cancelPaste = false;
         PasteLabel.Text = T.StopPasting;
+        PasteLabel.Visibility = Visibility.Visible;
 
         try
         {
@@ -3834,6 +3915,7 @@ public partial class MainWindow : Window
             catch (Exception) { /* the session is gone; so is the held key */ }
             _pasting = false;
             PasteLabel.Text = T.ToIPhone;
+            PasteLabel.Visibility = Visibility.Collapsed;
         }
     }
 

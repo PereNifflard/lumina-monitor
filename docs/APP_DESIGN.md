@@ -107,7 +107,12 @@ responses.
   idling, nothing is broken") with a "Wake the screen" button. Control is released (`Disengage`),
   the status dot switches to "locked", and `WatchStream` **stops saying** "Stream stalled": that
   was exactly the moment a normal state looked like a failure. The banner disappears with the
-  session (`Resetting`, `Faulted`, `Detached`, unplugged).
+  session (`Resetting`, `Faulted`, `Detached`, unplugged) — and, since 11 September 2026, the
+  moment the pictures come back at a lit screen's rate, **whoever woke the screen**: the wake
+  button, the chassis home button, a thumb on the phone, Face ID. `WatchDarkScreen` tells the
+  session (`NoticeScreenLit`) so its own sleep flag, the banner's second source, follows the
+  screen instead of the last button the session pressed. The rate window restarts at the sleep,
+  so the frames from just before the press cannot pass for a wake.
 - The side button decides based on `_screenDark`, not on `session.ScreenAsleep`: otherwise
   clicking on a phone that locked itself would send `lock` to an already-off screen.
   `ScreenSleepChanged` only makes the decision immediate when the sleep came from here
@@ -148,8 +153,16 @@ the XAML's `AudioPanel` border; the chain itself is in Core and described in §1
 |---|---|---|
 | "iPhone sound" switch | `audioEnabled` (true) | opens or **closes the stream**: off, nothing is negotiated, nothing is decoded, and iOS holds no capture session |
 | "Output" list | `audioOutputId` (empty) | "Windows default output" (the **Console** role) then the **active** render endpoints; what is stored is the endpoint identifier, not its name |
-| "Volume" slider + "Mute" | `audioVolume` (100), `audioMuted` (false) | a gain applied to the samples inside the app, **never** the system mixer — that endpoint is shared with the rest of the machine |
+| "Volume" slider | `audioVolume` (100) | a gain applied to the samples inside the app, **never** the system mixer — that endpoint is shared with the rest of the machine. There is no Mute switch: the slider at zero is one, and a panel of three settings reads at a glance |
 | "Delay" slider, 0–300 ms | `audioDelayMs` (50) | the jitter buffer's target fill; this is the setting that lines the lips up |
+
+**Silencing the phone has no switch of its own**: the sound plays here or on the phone, never both,
+and the switch at the top of the panel decides. Turning the iPhone's sound on presses the phone's
+Mute key; turning it off gives the phone its sound back (`AudioOptions.SilencePhone` follows
+`audioEnabled`). Known cost, measured 11 September 2026: with the mirror running, a Consumer
+volume/mute event makes some apps — Apple Music above all — stop feeding the audio capture for good.
+Those apps are already silenced by the mirror itself (see `AUDIO.md`, "Apple Music"), so the switch
+costs them nothing they had.
 
 - **The values are written when the panel closes** (plus the two switches, which are rare): a slider
   dragged across its travel raises a hundred events, and a hundred atomic file replacements for one

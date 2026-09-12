@@ -54,7 +54,6 @@ public partial class MainWindow
         {
             AudioEnabledSwitch.IsChecked = _settings.AudioEnabled;
             AudioVolumeSlider.Value = Math.Clamp(_settings.AudioVolume, 0, 100);
-            AudioMuteSwitch.IsChecked = _settings.AudioMuted;
             AudioDelaySlider.Value = Math.Clamp(_settings.AudioDelayMs, 0, AudioOptions.MaxDelayMs);
             AudioVolumeValue.Text = $"{(int)AudioVolumeSlider.Value}";
             AudioDelayValue.Text = T.AudioMilliseconds(AudioDelaySlider.Value);
@@ -122,7 +121,18 @@ public partial class MainWindow
     {
         if (_audioFilling)
             return;
-        _settings.AudioEnabled = AudioEnabledSwitch.IsChecked == true;
+        bool wanted = AudioEnabledSwitch.IsChecked == true;
+        // A no-op change closes and reopens the whole phone stream for nothing —
+        // and something was firing this handler without the value moving, which
+        // is the churn the log showed. Ignore a change that is not one, and say
+        // in the journal who asked, so a real toggle is told from a phantom.
+        if (wanted == _settings.AudioEnabled)
+        {
+            _journal.Write($"son : interrupteur reactive sans changement (toujours {(wanted ? "on" : "off")}) — ignore.");
+            return;
+        }
+        _journal.Write($"son : interrupteur bascule vers {(wanted ? "on" : "off")} (depuis la fenetre).");
+        _settings.AudioEnabled = wanted;
         _settings.Save();
         if (_session is { } session)
             _ = session.SetAudioEnabledAsync(_settings.AudioEnabled);
@@ -147,14 +157,6 @@ public partial class MainWindow
         ApplyAudioOptions();
     }
 
-    private void OnAudioMuteChanged(object sender, RoutedEventArgs e)
-    {
-        if (_audioFilling)
-            return;
-        _settings.AudioMuted = AudioMuteSwitch.IsChecked == true;
-        ApplyAudioOptions();
-    }
-
     private void OnAudioDelayChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         AudioDelayValue.Text = T.AudioMilliseconds(AudioDelaySlider.Value);
@@ -170,7 +172,7 @@ public partial class MainWindow
             return;
         AudioRetryButton.Visibility = Visibility.Collapsed;
         _journal.Write("son : nouvelle tentative demandee depuis le panneau.");
-        _ = session.OpenAudioAsync();
+        _ = session.OpenAudioAsync("reessai panneau");
     }
 
     /// <summary>The settings as Core wants them, whether or not a session exists.</summary>
@@ -179,8 +181,11 @@ public partial class MainWindow
         Enabled = _settings.AudioEnabled,
         DeviceId = _settings.AudioOutputId.Length == 0 ? null : _settings.AudioOutputId,
         Volume = _settings.AudioVolume,
-        Muted = _settings.AudioMuted,
         DelayMs = _settings.AudioDelayMs,
+        // The sound plays here or on the phone, never both, and the switch at the
+        // top of the panel is what decides: no separate control for it, and no
+        // mute of our own either — the volume slider at zero is that.
+        SilencePhone = _settings.AudioEnabled,
     };
 
     /// <summary>Volume, mute, delay and output to the chain already running.</summary>
@@ -221,7 +226,7 @@ public partial class MainWindow
         {
             AudioStatus.Text = t.AudioRunning(
                 running.Device.Length > 0 ? running.Device : t.AudioDefaultOutput,
-                running.QueuedMs, running.Underruns);
+                running.LevelText);
         }
         else if (session is null || !Mirroring)
         {

@@ -244,28 +244,29 @@
                              panne, et le dire vaut mieux que laisser le flux
                              arrêté passer pour une : c'est exactement le moment
                              où l'app avait l'air cassée. -->
-                        <Border x:Name="LockBanner" Background="#E6101B2E"
-                                CornerRadius="14" Padding="20,16"
+                        <!-- iPhone verrouille : le seul message, au centre. Plus
+                             de bandeau « verrouille » informatif ni de bouton
+                             Reveiller — le bouton lateral du chassis reveille, et
+                             tout le reste marche. Ce qui manque a l'utilisateur,
+                             c'est le pave du code, qu'iOS exclut de la capture ;
+                             alors on lui dit quoi faire, en grand et au centre.
+                             Transparent aux clics pour ne pas gener le pilotage. -->
+                        <Border x:Name="PasscodeHint" Background="#E6101B2E"
+                                CornerRadius="16" Padding="26,22"
                                 HorizontalAlignment="Center" VerticalAlignment="Center"
                                 MaxWidth="360"
                                 BorderBrush="{StaticResource GlassBorder}" BorderThickness="1"
-                                Visibility="Collapsed"
-                                MouseLeftButtonDown="OnBannerDown">
+                                Visibility="Collapsed" IsHitTestVisible="False">
                             <StackPanel>
-                                <TextBlock x:Name="LockBannerTitle"
-                                           FontFamily="{StaticResource DisplayFont}"
-                                           FontSize="17" FontWeight="SemiBold"
-                                           HorizontalAlignment="Center"
+                                <TextBlock Text="&#xE72E;" FontSize="26" HorizontalAlignment="Center"
+                                           Margin="0,0,0,12" Foreground="{StaticResource Primary}"
+                                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
+                                <TextBlock x:Name="PasscodeHintText" TextWrapping="Wrap"
+                                           FontSize="14.5" LineHeight="21" TextAlignment="Center"
                                            Foreground="{StaticResource OnSurface}" />
-                                <TextBlock x:Name="LockBannerText" TextWrapping="Wrap"
-                                           FontSize="12.5" LineHeight="19" Margin="0,10,0,0"
-                                           Foreground="{StaticResource OnSurfaceVariant}" />
-                                <Button x:Name="WakeButton"
-                                        Margin="0,14,0,0" HorizontalAlignment="Center"
-                                        Style="{StaticResource BarButton}"
-                                        Click="OnWakeClicked" />
                             </StackPanel>
                         </Border>
+
                     </Grid>
                 </Border>
 
@@ -348,54 +349,55 @@
                 CornerRadius="16" Padding="6,5"
                 Background="{StaticResource GlassSurface}"
                 BorderBrush="{StaticResource GlassBorder}" BorderThickness="1">
+            <!-- Trois rangs d'importance, de gauche a droite : le
+                 presse-papiers (occasionnel, pictogrammes seuls), l'accueil
+                 (le geste de tous les jours, plein et accentue, au centre),
+                 puis le son (un reglage, pictogramme seul, mis a part). -->
             <StackPanel Orientation="Horizontal">
-                <Button x:Name="HomeButton" Style="{StaticResource BarButton}"
-                        Click="OnHomeClicked">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE80F;" FontSize="14" VerticalAlignment="Center"
-                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
-                        <TextBlock x:Name="HomeLabel" Margin="9,0,0,0"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-
-                <Rectangle Width="1" Fill="{StaticResource GlassBorder}" Margin="5,8" />
-
                 <!-- Le presse-papiers, dans les deux sens. Deux boutons plutôt
                      qu'un menu : le sens est ce qu'on choisit, et un menu le
-                     cacherait derrière un clic de plus. -->
-                <Button x:Name="PasteButton" Style="{StaticResource BarButton}"
+                     cacherait derrière un clic de plus. Sans mot : leur nom est
+                     dans l'infobulle et dans le nom accessible. -->
+                <Button x:Name="PasteButton" Style="{StaticResource IconBarButton}"
                         Click="OnPasteClicked">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE77F;" FontSize="14" VerticalAlignment="Center"
+                        <TextBlock x:Name="PasteIcon" Text="&#xE77F;" FontSize="15"
+                                   VerticalAlignment="Center"
                                    FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
-                        <TextBlock x:Name="PasteLabel" Margin="9,0,0,0"
+                        <!-- Le mot n'apparait que pendant un collage, pour offrir
+                             « Arreter » ; sinon l'icone seule suffit. -->
+                        <TextBlock x:Name="PasteLabel" Margin="8,0,0,0" Visibility="Collapsed"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
 
-                <Button x:Name="FetchButton" Style="{StaticResource BarButton}"
+                <Button x:Name="FetchButton" Style="{StaticResource IconBarButton}"
                         Click="OnFetchClicked">
+                    <TextBlock Text="&#xE8C8;" FontSize="15" VerticalAlignment="Center"
+                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
+                </Button>
+
+                <Rectangle Width="1" Fill="{StaticResource GlassBorder}" Margin="7,8" />
+
+                <Button x:Name="HomeButton" Style="{StaticResource PrimaryBarButton}"
+                        Click="OnHomeClicked">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE8C8;" FontSize="14" VerticalAlignment="Center"
+                        <TextBlock Text="&#xE80F;" FontSize="15" VerticalAlignment="Center"
                                    FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
-                        <TextBlock x:Name="FetchLabel" Margin="9,0,0,0"
+                        <TextBlock x:Name="HomeLabel" Margin="10,0,0,0"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
 
-                <Rectangle Width="1" Fill="{StaticResource GlassBorder}" Margin="5,8" />
+                <Rectangle Width="1" Fill="{StaticResource GlassBorder}" Margin="7,8" />
 
                 <!-- Le son de l'iPhone, par le cable, sur la sortie Windows de
-                     son choix. Le panneau est juste au-dessus. -->
-                <Button x:Name="AudioButton" Style="{StaticResource BarButton}"
+                     son choix : un reglage, pas une action. Le panneau est juste
+                     au-dessus. -->
+                <Button x:Name="AudioButton" Style="{StaticResource IconBarButton}"
                         Click="OnAudioClicked">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE767;" FontSize="14" VerticalAlignment="Center"
-                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
-                        <TextBlock x:Name="AudioLabel" Margin="9,0,0,0"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
+                    <TextBlock Text="&#xE767;" FontSize="15" VerticalAlignment="Center"
+                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol" />
                 </Button>
             </StackPanel>
         </Border>
@@ -435,18 +437,17 @@
                 <ComboBox x:Name="AudioOutputBox" Style="{StaticResource PanelCombo}"
                           SelectionChanged="OnAudioOutputChanged" />
 
+                <!-- Pas de bascule Muet : le curseur a zero fait la meme chose,
+                     et un panneau qui tient en trois reglages se lit d'un coup
+                     d'oeil. Pas d'interrupteur « faire taire l'iPhone » non
+                     plus : le son passe par ici ou par le telephone, jamais les
+                     deux, et c'est l'interrupteur du haut qui en decide. -->
                 <Grid Margin="0,15,0,3">
                     <TextBlock x:Name="AudioVolumeLabel" FontSize="11.5" VerticalAlignment="Center"
                                Foreground="{StaticResource OnSurfaceVariant}" />
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <TextBlock x:Name="AudioMuteLabel" Margin="0,0,8,0" FontSize="11.5"
-                                   VerticalAlignment="Center" Foreground="{StaticResource OnSurfaceVariant}" />
-                        <CheckBox x:Name="AudioMuteSwitch" Style="{StaticResource ToggleSwitch}"
-                                  Checked="OnAudioMuteChanged" Unchecked="OnAudioMuteChanged" />
-                        <TextBlock x:Name="AudioVolumeValue" Margin="12,0,0,0" MinWidth="38" FontSize="11.5"
-                                   TextAlignment="Right" VerticalAlignment="Center"
-                                   Foreground="{StaticResource OnSurface}" />
-                    </StackPanel>
+                    <TextBlock x:Name="AudioVolumeValue" HorizontalAlignment="Right" MinWidth="38"
+                               FontSize="11.5" TextAlignment="Right" VerticalAlignment="Center"
+                               Foreground="{StaticResource OnSurface}" />
                 </Grid>
                 <Slider x:Name="AudioVolumeSlider" Style="{StaticResource PanelSlider}"
                         Minimum="0" Maximum="100" SmallChange="1" LargeChange="10"

@@ -196,6 +196,18 @@ public sealed class Settings
     public bool AudioMuted { get; set; } = false;
 
     /// <summary>
+    /// Whether the phone is muted (its own Mute key) while its sound plays here.
+    /// </summary>
+    /// <remarks>
+    /// Off by default: pressing the phone's Mute key while the mirror is up makes
+    /// some apps (Apple Music) stop feeding the audio capture for good, so the
+    /// safe default is to leave the phone alone and keep the sound — see
+    /// <c>LuminaMonitor.Core.Audio.AudioOptions.SilencePhone</c>.
+    /// </remarks>
+    [JsonPropertyName("audioSilencePhone")]
+    public bool AudioSilencePhone { get; set; }
+
+    /// <summary>
     /// How long the sound is held back, in milliseconds, to line it up with the
     /// picture.
     /// </summary>

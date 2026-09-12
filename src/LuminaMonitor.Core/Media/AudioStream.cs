@@ -63,6 +63,9 @@ internal sealed class AudioStream
     /// <summary>Whether the phone is sending sound.</summary>
     public bool Streaming => _session.Streaming;
 
+    /// <summary>The session this stream runs under, for a video stream to spare.</summary>
+    public XpcUuid SessionId => _session.SessionId;
+
     /// <summary>Why there is no sound: the daemon's refusal, or the output's.</summary>
     public string? Failure => _session.Failure ?? _renderer.Stats.Failure;
 
@@ -100,6 +103,16 @@ internal sealed class AudioStream
     /// <remarks>
     /// The order is the stream first: the phone is told to stop sending before the
     /// output is closed, so no frame is decoded into a queue nobody will drain.
+    ///
+    /// <para>Told by receiver reports and BYE, never by <c>stopmediastream</c>:
+    /// that call names a session, this stream shares the video's, and on
+    /// 11 September 2026 the sound switched off in the window took the picture
+    /// down a second later. Measured the other way the same day
+    /// (<c>audio-info --video --stop=bye --hold=25</c>): the picture keeps its
+    /// 117 packets a second, the phone goes on sending audio for the twenty
+    /// seconds of its RTCP timeout and then ends that stream alone, and the
+    /// status afterwards lists the video and nothing else. Twenty seconds of a
+    /// capture nobody decodes is the price of a picture that stays.</para>
     /// </remarks>
     public async Task StopAsync()
     {
@@ -111,7 +124,7 @@ internal sealed class AudioStream
             _skewWatch = null;
         }
         _session.RtpPacket -= OnDatagram;
-        try { await _session.StopAsync(); }
+        try { await _session.StopAsync(tellDaemon: false); }
         catch (Exception exception) { _log?.Warn($"arret du flux audio incomplet : {exception.Message}"); }
         _renderer.Dispose();
         _stopping?.Dispose();

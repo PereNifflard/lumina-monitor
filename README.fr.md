@@ -96,7 +96,8 @@ tunnel et le miroir toute seule ; la barre d'état dit où elle en est.
 - **Audio** (bouton de la barre du bas) : le son du téléphone, par le câble, sur
   la sortie Windows de ton choix — décodé par un décodeur AAC-ELD écrit dans ce
   projet, Windows n'en fournissant aucun. Volume, sourdine, et un retard pour
-  aligner le son sur l'image.
+  aligner le son sur l'image ; l'iPhone lui-même est mis en sourdine pendant
+  ce temps, pour que la pièce reste silencieuse.
 
 L'interface suit la langue d'affichage de Windows (anglais ou français) et
 peut être forcée dans les réglages.

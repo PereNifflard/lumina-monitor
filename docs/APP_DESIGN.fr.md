@@ -97,7 +97,13 @@ cassé », indiscernables du compteur de paquets et qui demandent des réponses 
   tourne au ralenti, rien n'est cassé ») avec un bouton « Réveiller l'écran ». Le pilotage est rendu
   (`Disengage`), la pastille passe à « verrouillé », et `WatchStream` **ne dit plus** « Flux arrêté » :
   c'était exactement le moment où une chose normale avait l'air d'une panne. Le bandeau disparaît
-  avec la session (`Resetting`, `Faulted`, `Detached`, débranchement).
+  avec la session (`Resetting`, `Faulted`, `Detached`, débranchement) — et, depuis le 11 septembre
+  2026, dès que les images reviennent à la cadence d'un écran allumé, **qui que ce soit qui l'ait
+  réveillé** : le bouton du bandeau, le bouton accueil du châssis, un pouce sur le téléphone,
+  Face ID. `WatchDarkScreen` le dit à la session (`NoticeScreenLit`) pour que son propre drapeau
+  de sommeil, seconde source du bandeau, suive l'écran plutôt que le dernier bouton pressé. La
+  fenêtre de mesure repart au moment de l'endormissement, pour que les images d'avant l'appui ne
+  passent pas pour un réveil.
 - Le bouton latéral se décide sur `_screenDark`, pas sur `session.ScreenAsleep` : sinon un clic sur un
   téléphone qui s'est verrouillé seul enverrait `lock` sur un écran déjà éteint. `ScreenSleepChanged`
   ne fait que rendre la décision immédiate quand le sommeil vient d'ici (`DecideDarkScreen`, sans
@@ -135,7 +141,16 @@ Le son du téléphone, par le câble, sur la sortie Windows de son choix. `MainW
 |---|---|---|
 | interrupteur « Son de l'iPhone » | `audioEnabled` (vrai) | ouvre ou **ferme le flux** : coupé, rien n'est négocié, rien n'est décodé, et iOS ne garde aucune session de capture |
 | liste « Sortie » | `audioOutputId` (vide) | « Sortie par défaut de Windows » (rôle **Console**) puis les périphériques de rendu **actifs** ; l'identifiant stocké est celui du point de terminaison, pas son nom |
-| curseur « Volume » + « Muet » | `audioVolume` (100), `audioMuted` (faux) | gain appliqué aux échantillons dans l'app, **jamais** le mélangeur système — ce périphérique est partagé avec le reste de la machine |
+| curseur « Volume » | `audioVolume` (100) | gain appliqué aux échantillons dans l'app, **jamais** le mélangeur système — ce périphérique est partagé avec le reste de la machine. Pas de bascule Muet : le curseur à zéro en est une, et un panneau de trois réglages se lit d'un coup d'œil |
+
+**Faire taire le téléphone n'a pas d'interrupteur à soi** : le son joue ici ou sur le téléphone,
+jamais les deux, et c'est l'interrupteur du haut du panneau qui décide. Activer le son de l'iPhone
+presse la touche Muet du téléphone ; le couper lui rend son son (`AudioOptions.SilencePhone` suit
+`audioEnabled`). Coût connu, mesuré le 11 septembre 2026 : avec le miroir actif, un événement de
+volume/muet Consumer fait que certaines apps — Apple Music au premier chef — cessent d'alimenter la
+capture audio définitivement. Ces apps-là sont de toute façon déjà réduites au silence par le miroir
+lui-même (voir `AUDIO.fr.md`, « Apple Music »), donc l'interrupteur ne leur coûte rien qu'elles
+avaient.
 | curseur « Retard » 0–300 ms | `audioDelayMs` (50) | remplissage cible du tampon de gigue ; c'est le réglage qui aligne les lèvres |
 
 - **Les valeurs ne sont écrites qu'à la fermeture du panneau** (plus les deux interrupteurs, qui sont

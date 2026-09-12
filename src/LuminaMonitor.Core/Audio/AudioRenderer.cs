@@ -57,6 +57,30 @@ internal sealed class AudioRenderer : IDisposable
     private long _packets, _lost, _outOfOrder, _ignored;
 
     /// <summary>
+    /// A decaying peak of the decoded samples, absolute value, full scale 1.0.
+    /// </summary>
+    /// <remarks>
+    /// The one number that tells a stream carrying music from a stream carrying
+    /// silence, which the packet count cannot: the phone sends a hundred frames a
+    /// second either way. It is <b>not</b> reset when read — an earlier version
+    /// did, and with the panel and the journal and a property both reading it many
+    /// times a second, each read wiped the window before it filled and the meter
+    /// flickered to silence over real sound. Instead each frame folds its own peak
+    /// in and lets the old value decay (<see cref="PeakDecayPerFrame"/>), so the
+    /// value is the loudest of roughly the last second however often it is read,
+    /// and it falls to silence about a second after the sound stops. Measured on
+    /// the decoded samples, before the gain, so it reads what the phone sent and
+    /// not what the volume slider let through.
+    /// </remarks>
+    private float _recentPeak;
+
+    /// <summary>
+    /// Per-frame decay of <see cref="_recentPeak"/>: 0.92 at a hundred frames a
+    /// second falls from full scale to the silence threshold in about a second.
+    /// </summary>
+    private const float PeakDecayPerFrame = 0.92f;
+
+    /// <summary>
     /// Builds the chain: the phone's own codec configuration, a jitter buffer
     /// sized for it, and a sink.
     /// </summary>
@@ -92,7 +116,13 @@ internal sealed class AudioRenderer : IDisposable
     public void Apply(AudioOptions options)
     {
         _buffer.TargetMs = options.ClampedDelayMs;
-        _sink.Gain = options.Gain;
+        // Sound "off" from the panel silences the output but leaves the stream
+        // running: opening and closing the phone stream on the switch was what
+        // made the reopened one come up silent, the old one still lingering on
+        // the phone and the two colliding on the shared session (measured
+        // 11 September 2026 — the first stream played, every toggle after it did
+        // not). So "off" is gain zero here, not a stream torn down.
+        _sink.Gain = options.Enabled ? options.Gain : 0f;
         _sink.Use(options.DeviceId);
     }
 
@@ -164,7 +194,12 @@ internal sealed class AudioRenderer : IDisposable
         get
         {
             long packets, lost, outOfOrder;
-            lock (_gate) (packets, lost, outOfOrder) = (_packets, _lost, _outOfOrder);
+            float peak;
+            lock (_gate)
+            {
+                (packets, lost, outOfOrder) = (_packets, _lost, _outOfOrder);
+                peak = _recentPeak;
+            }
             return new AudioStats(
                 Streaming: false, Failure: _sink.Failure,
                 Packets: packets,
@@ -179,7 +214,8 @@ internal sealed class AudioRenderer : IDisposable
                 OutputLatencyMs: _sink.LatencyMs,
                 Device: _sink.Device,
                 Format: _sink.Format,
-                SkewMs: double.NaN);
+                SkewMs: double.NaN,
+                PeakLevel: peak);
         }
     }
 
@@ -204,7 +240,16 @@ internal sealed class AudioRenderer : IDisposable
     private void Decode(ReadOnlySpan<byte> accessUnit)
     {
         float[] frame = _buffer.Rent(out int slot);
-        _decoder.Decode(accessUnit, frame, out _);
+        _decoder.Decode(accessUnit, frame, out int samplesPerChannel);
+        int samples = Math.Min(frame.Length, samplesPerChannel * 2);
+        float peak = 0f;
+        for (int at = 0; at < samples; at++)
+        {
+            float magnitude = Math.Abs(frame[at]);
+            if (magnitude > peak) peak = magnitude;
+        }
+        lock (_gate)
+            _recentPeak = Math.Max(peak, _recentPeak * PeakDecayPerFrame);
         _buffer.Commit(slot);
     }
 

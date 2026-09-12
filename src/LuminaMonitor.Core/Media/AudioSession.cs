@@ -65,6 +65,30 @@ internal sealed class AudioSession
     /// </summary>
     public XpcUuid? PairedSessionId { get; set; }
 
+    /// <summary>
+    /// A session the orphan guard must not release, even though this stream does
+    /// not share it.
+    /// </summary>
+    /// <remarks>
+    /// For the unpaired case: the audio runs on its own session (so
+    /// <c>stopmediastream</c> never touches the picture and, the hope goes, iOS
+    /// does not treat it as a screen recording's audio track), but the video's
+    /// session is still live and must survive the hygiene sweep that runs before
+    /// this stream opens. Without this the guard, told to keep nothing, would
+    /// release the video session and take the mirror down — measured on
+    /// 11 September 2026, the reason an unpaired probe run killed the picture.
+    /// When paired, this and <see cref="PairedSessionId"/> are the same session
+    /// and either serves.
+    /// </remarks>
+    public XpcUuid? SpareSessionId { get; set; }
+
+    /// <summary>The session this stream actually runs under, once started.</summary>
+    /// <remarks>
+    /// What a video stream opened afterwards must be told to spare, so its own
+    /// orphan guard does not close the sound that is already playing.
+    /// </remarks>
+    public XpcUuid SessionId => _sessionId;
+
     /// <summary>Always <c>"output"</c> in practice; the probe sets it to ask the phone about <c>"input"</c>.</summary>
     public string Direction { get; set; } = "output";
 
@@ -143,7 +167,7 @@ internal sealed class AudioSession
         // audio session the phone was never told to end is a system-audio
         // capture session iOS has not handed back, and while it stands the
         // person's own microphone is unavailable to their other apps.
-        await MediaHygiene.ReleaseOrphansAsync(_rsd, Say, PairedSessionId);
+        await MediaHygiene.ReleaseOrphansAsync(_rsd, Say, SpareSessionId ?? PairedSessionId);
 
         _display = await _rsd.OpenAsync(DisplayService.ServiceName, serviceTrace);
         _stopping = new CancellationTokenSource();
@@ -169,7 +193,16 @@ internal sealed class AudioSession
     }
 
     /// <summary>Stops the stream the way the daemon expects: reports, BYE, stop, then the channel.</summary>
-    public async Task StopAsync()
+    /// <param name="tellDaemon">
+    /// Whether to send <c>stopmediastream</c>. That call names a <em>session</em>,
+    /// and when this stream shares the video's session it takes the video down
+    /// with it — measured 11 September 2026 in the window: sound switched off,
+    /// picture gone a second later. False leaves the daemon alone and ends the
+    /// stream the other way, receiver reports and BYE; the probe measures what
+    /// the phone does with that.
+    /// </param>
+    /// <param name="keepPort">Leave the UDP port listening, so what still arrives after the stop can be counted.</param>
+    public async Task StopAsync(bool tellDaemon = true, bool keepPort = false)
     {
         _stopping?.Cancel();
         if (_reports is not null) { try { await _reports; } catch (Exception) { } _reports = null; }
@@ -181,11 +214,11 @@ internal sealed class AudioSession
             try { await _rtcp.SendByeAsync(); }
             catch (Exception exception) { _net.Log?.Invoke($"RTCP BYE audio non envoye : {exception.Message}"); }
         }
-        if (display is not null && Streaming)
+        if (display is not null && Streaming && tellDaemon)
             await DisplayService.StopMediaStreamAsync(display, _sessionId);
         Streaming = false;
         _rtcp = null;
-        if (_udpPort != 0) { _net.StopUdp(_udpPort); _udpPort = 0; }
+        if (_udpPort != 0 && !keepPort) { _net.StopUdp(_udpPort); _udpPort = 0; }
         if (display is not null)
         {
             var (byThePhone, milliseconds) = await display.CloseAsync(HangUpPatience);
