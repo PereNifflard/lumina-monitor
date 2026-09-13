@@ -1105,10 +1105,20 @@ public partial class MainWindow : Window
         // A new geometry is a rotation, or a new session. Either way the
         // orientation is no longer known; twenty frames is a third of a second
         // to settle it, and a dark screen simply runs out and leaves it Unknown.
-        _orientation = height >= width
-            ? DeviceGeometry.Orientation.Portrait
-            : DeviceGeometry.Orientation.Unknown;
-        _orientationPending = height >= width ? 0 : 20;
+        // Locked to portrait, none of that runs: the chrome stays upright no
+        // matter what a phone flat on the desk decides its orientation is.
+        if (_settings.LockPortrait)
+        {
+            _orientation = DeviceGeometry.Orientation.Portrait;
+            _orientationPending = 0;
+        }
+        else
+        {
+            _orientation = height >= width
+                ? DeviceGeometry.Orientation.Portrait
+                : DeviceGeometry.Orientation.Unknown;
+            _orientationPending = height >= width ? 0 : 20;
+        }
 
         FitDevice();
         ShowIdleHint();
@@ -1969,6 +1979,10 @@ public partial class MainWindow : Window
     /// <summary>Takes a detected orientation and re-lays the chassis around it.</summary>
     private void AdoptOrientation(DeviceGeometry.Orientation seen)
     {
+        // Held to portrait: a late detection from a frame in flight cannot pull
+        // the chrome sideways after the fact.
+        if (_settings.LockPortrait)
+            return;
         if (seen == _orientation)
             return;
 

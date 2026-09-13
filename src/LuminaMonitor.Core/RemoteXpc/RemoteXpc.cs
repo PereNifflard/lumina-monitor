@@ -112,6 +112,40 @@ internal sealed class RemoteXpc : IDisposable
         // like every other wait here, so the reason is read rather than caught.
         if (Fault is { } fault)
             throw new IOException($"RemoteXPC : {fault.Message}", fault);
+
+        _keepalive = Task.Run(KeepaliveAsync);
+    }
+
+    /// <summary>How often an idle channel pings the daemon to stay alive.</summary>
+    /// <remarks>
+    /// Each service — the HID Indigo channel above all — is its own TCP
+    /// connection over the tunnel, and iOS reaps one the phone hears nothing on
+    /// for long enough. Found on 13 September 2026: after hours idle the mirror
+    /// still played (its RTP is one-way UDP and needs no answer) while the
+    /// buttons were dead, the Indigo connection long since closed, and reopening
+    /// it on a tunnel gone just as quiet failed too. An HTTP/2 PING every
+    /// twenty seconds is the standard keep-warm: it costs nothing, the daemon
+    /// already answers pings, and it keeps this channel and the tunnel under it
+    /// from being collected while nobody is touching the phone.
+    /// </remarks>
+    private static readonly TimeSpan KeepaliveInterval = TimeSpan.FromSeconds(20);
+    private Task? _keepalive;
+
+    private async Task KeepaliveAsync()
+    {
+        try
+        {
+            while (!_cts.IsCancellationRequested)
+            {
+                await Task.Delay(KeepaliveInterval, _cts.Token).ConfigureAwait(false);
+                await WriteFrameAsync(FramePing, 0, 0, new byte[8]).ConfigureAwait(false);
+            }
+        }
+        catch (Exception)
+        {
+            // The channel closed or was disposed mid-ping; nothing to keep alive
+            // any more. The reader's fault path has already said why.
+        }
     }
 
     /// <summary>Why this channel stopped working, once it has.</summary>

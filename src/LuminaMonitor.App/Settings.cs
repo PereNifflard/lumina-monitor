@@ -66,6 +66,21 @@ public sealed class Settings
     [JsonPropertyName("invertWheel")]
     public bool InvertWheel { get; set; } = false;
 
+    /// <summary>Whether the mirror stays portrait whatever the phone reports.</summary>
+    /// <remarks>
+    /// On by default, because the phone spends its life flat on the desk where
+    /// iOS, with rotation unlocked, flips to landscape on a whim — and the
+    /// picture the phone actually sends never leaves portrait (measured: the
+    /// geometry stays tall), so the only thing that moved was our own reading of
+    /// it, the Dynamic Island and the side buttons jumping to a landscape they
+    /// have no business in. Held to portrait, that stops. Turn it off to let the
+    /// mirror follow a phone that is genuinely rotated — a video watched sideways
+    /// on purpose. The real cure, when the phone is meant to stay upright, is
+    /// Portrait Orientation Lock in the phone's own Control Center.
+    /// </remarks>
+    [JsonPropertyName("lockPortrait")]
+    public bool LockPortrait { get; set; } = true;
+
     /// <summary>
     /// Pull the phone's brightness down when the mirror starts.
     /// </summary>
