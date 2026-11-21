@@ -33,7 +33,7 @@ HFS+ et APFS — est réimplémenté à partir du protocole, pas importé.
 | PC | **.NET 8 SDK**, seulement pour compiler soi-même | [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet/8.0) |
 | iPhone | **iOS 27** (iOS 26 : boutons seulement), **Mode développeur** activé | [Réglages > Confidentialité et sécurité > Mode développeur](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device) |
 | iPhone | appairé au PC : brancher, puis « Se fier à cet ordinateur » | |
-| Fichier | **une archive Xcode 27** (`Xcode_27_beta_N.xip`, ~2 Go) **ou** un composant « Device Support » (`.dmg`, ~100 Mo) | [developer.apple.com/download/all](https://developer.apple.com/download/all/) (compte Apple gratuit) |
+| Fichier | **une archive Xcode 27** (`Xcode_27_beta_N.xip`, ~2 Go) **ou** un composant « Device Support » (`.dmg`, ~100 Mo) | [developer.apple.com/download/all](https://developer.apple.com/download/all/?q=xcode) (compte Apple gratuit) |
 
 Cette dernière ligne mérite une phrase. L'**image développeur** est un binaire
 signé par Apple ; c'est elle qui apporte au téléphone les services de pilotage
