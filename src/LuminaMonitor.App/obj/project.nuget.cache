@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "cvhkK4SxOnA=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\gamme\\Desktop\\lumina-monitor-main\\src\\LuminaMonitor.App\\LuminaMonitor.App.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\gamme\\.nuget\\packages\\microsoft.windowsdesktop.app.ref\\8.0.34\\microsoft.windowsdesktop.app.ref.8.0.34.nupkg.sha512",
+    "C:\\Users\\gamme\\.nuget\\packages\\microsoft.netcore.app.ref\\8.0.34\\microsoft.netcore.app.ref.8.0.34.nupkg.sha512",
+    "C:\\Users\\gamme\\.nuget\\packages\\microsoft.aspnetcore.app.ref\\8.0.34\\microsoft.aspnetcore.app.ref.8.0.34.nupkg.sha512",
+    "C:\\Users\\gamme\\.nuget\\packages\\microsoft.netcore.app.host.win-x64\\8.0.34\\microsoft.netcore.app.host.win-x64.8.0.34.nupkg.sha512"
+  ],
+  "logs": []
+}

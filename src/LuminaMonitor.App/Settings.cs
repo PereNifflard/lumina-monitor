@@ -120,6 +120,10 @@ public sealed class Settings
     [JsonPropertyName("chassisColour")]
     public string ChassisColour { get; set; } = "orange";
 
+    /// <summary>Shows only the rounded phone display, without app chrome or drawn hardware.</summary>
+    [JsonPropertyName("minimalMode")]
+    public bool MinimalMode { get; set; }
+
     /// <summary>
     /// The phone's passcode, for unlocking it from the window. Empty, and empty
     /// is the right answer for almost everybody.
