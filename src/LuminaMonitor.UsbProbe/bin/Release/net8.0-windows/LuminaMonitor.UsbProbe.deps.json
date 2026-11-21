@@ -1,0 +1,56 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "LuminaMonitor.UsbProbe/1.0.0": {
+        "dependencies": {
+          "LuminaMonitor.Core": "1.0.0",
+          "LuminaMonitor.Formats": "1.0.0"
+        },
+        "runtime": {
+          "LuminaMonitor.UsbProbe.dll": {}
+        }
+      },
+      "LuminaMonitor.Core/1.0.0": {
+        "dependencies": {
+          "LuminaMonitor.Formats": "1.0.0"
+        },
+        "runtime": {
+          "LuminaMonitor.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "LuminaMonitor.Formats/1.0.0": {
+        "runtime": {
+          "LuminaMonitor.Formats.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "LuminaMonitor.UsbProbe/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "LuminaMonitor.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "LuminaMonitor.Formats/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
