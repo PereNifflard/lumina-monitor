@@ -34,7 +34,7 @@ imported.
 | PC | **.NET 8 SDK**, only needed to build it yourself | [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet/8.0) |
 | iPhone | **iOS 27** (iOS 26: buttons only), **Developer Mode** enabled | [Settings > Privacy & Security > Developer Mode](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device) |
 | iPhone | paired with the PC: plug it in, then tap "Trust This Computer" | |
-| File | **an Xcode 27 archive** (`Xcode_27_beta_N.xip`, ~2 GB) **or** a "Device Support" component (`.dmg`, ~100 MB) | [developer.apple.com/download/all](https://developer.apple.com/download/all/) (free Apple account) |
+| File | **an Xcode 27 archive** (`Xcode_27_beta_N.xip`, ~2 GB) **or** a "Device Support" component (`.dmg`, ~100 MB) | [developer.apple.com/download/all](https://developer.apple.com/download/all/?q=xcode) (free Apple account) |
 
 That last row deserves a sentence. The **Developer Disk Image** is a binary
 signed by Apple; it's what brings the control services (HID, display) to the
