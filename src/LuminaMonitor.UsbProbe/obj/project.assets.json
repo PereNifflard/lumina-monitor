@@ -1,0 +1,139 @@
+{
+  "version": 4,
+  "targets": {
+    "net8.0-windows": {
+      "LuminaMonitor.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "dependencies": {
+          "LuminaMonitor.Formats": "1.0.0"
+        },
+        "compile": {
+          "bin/placeholder/LuminaMonitor.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/LuminaMonitor.Core.dll": {}
+        }
+      },
+      "LuminaMonitor.Formats/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "compile": {
+          "bin/placeholder/LuminaMonitor.Formats.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/LuminaMonitor.Formats.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "LuminaMonitor.Core/1.0.0": {
+      "type": "project",
+      "path": "../LuminaMonitor.Core/LuminaMonitor.Core.csproj",
+      "msbuildProject": "../LuminaMonitor.Core/LuminaMonitor.Core.csproj"
+    },
+    "LuminaMonitor.Formats/1.0.0": {
+      "type": "project",
+      "path": "../LuminaMonitor.Formats/LuminaMonitor.Formats.csproj",
+      "msbuildProject": "../LuminaMonitor.Formats/LuminaMonitor.Formats.csproj"
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net8.0-windows": [
+      "LuminaMonitor.Core >= 1.0.0",
+      "LuminaMonitor.Formats >= 1.0.0"
+    ]
+  },
+  "packageFolders": {
+    "C:\\Users\\gamme\\.nuget\\packages\\": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "C:\\Users\\gamme\\Desktop\\lumina-monitor-main\\src\\LuminaMonitor.UsbProbe\\LuminaMonitor.UsbProbe.csproj",
+      "projectName": "LuminaMonitor.UsbProbe",
+      "projectPath": "C:\\Users\\gamme\\Desktop\\lumina-monitor-main\\src\\LuminaMonitor.UsbProbe\\LuminaMonitor.UsbProbe.csproj",
+      "packagesPath": "C:\\Users\\gamme\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\gamme\\Desktop\\lumina-monitor-main\\src\\LuminaMonitor.UsbProbe\\obj\\",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "C:\\Users\\gamme\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+      ],
+      "originalTargetFrameworks": [
+        "net8.0-windows"
+      ],
+      "sources": {
+        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net8.0-windows": {
+          "framework": "net8.0-windows7.0",
+          "targetAlias": "net8.0-windows",
+          "projectReferences": {
+            "C:\\Users\\gamme\\Desktop\\lumina-monitor-main\\src\\LuminaMonitor.Core\\LuminaMonitor.Core.csproj": {
+              "projectPath": "C:\\Users\\gamme\\Desktop\\lumina-monitor-main\\src\\LuminaMonitor.Core\\LuminaMonitor.Core.csproj"
+            },
+            "C:\\Users\\gamme\\Desktop\\lumina-monitor-main\\src\\LuminaMonitor.Formats\\LuminaMonitor.Formats.csproj": {
+              "projectPath": "C:\\Users\\gamme\\Desktop\\lumina-monitor-main\\src\\LuminaMonitor.Formats\\LuminaMonitor.Formats.csproj"
+            }
+          }
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      },
+      "restoreAuditProperties": {
+        "enableAudit": "true",
+        "auditLevel": "low",
+        "auditMode": "direct"
+      },
+      "SdkAnalysisLevel": "10.0.400"
+    },
+    "frameworks": {
+      "net8.0-windows": {
+        "framework": "net8.0-windows7.0",
+        "targetAlias": "net8.0-windows",
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "downloadDependencies": [
+          {
+            "name": "Microsoft.AspNetCore.App.Ref",
+            "version": "[8.0.34, 8.0.34]"
+          },
+          {
+            "name": "Microsoft.NETCore.App.Host.win-x64",
+            "version": "[8.0.34, 8.0.34]"
+          },
+          {
+            "name": "Microsoft.NETCore.App.Ref",
+            "version": "[8.0.34, 8.0.34]"
+          },
+          {
+            "name": "Microsoft.WindowsDesktop.App.Ref",
+            "version": "[8.0.34, 8.0.34]"
+          }
+        ],
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.404/PortableRuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}

@@ -172,6 +172,7 @@ public partial class MainWindow : Window
 
     /// <summary>Border width in window units, kept so a colour change can reshade the buttons.</summary>
     private double _border;
+    private double[]? _normalBoundsBeforeMinimal;
     private Color _buttonJoint, _buttonChamfer, _buttonFace;
 
     /// <summary>The colour that says "this can be clicked" on the chassis; one per body colour.</summary>
@@ -289,6 +290,8 @@ public partial class MainWindow : Window
 
         Loaded += OnLoaded;
         Closed += OnClosed;
+        PreviewKeyDown += OnWindowPreviewKeyDown;
+        PreviewMouseDown += OnWindowPreviewMouseDown;
         Deactivated += (_, _) =>
         {
             HideButtonLabel();
@@ -303,6 +306,58 @@ public partial class MainWindow : Window
 
         _display.Tick += (_, _) => UpdateMetrics();
         _display.Start();
+    }
+
+    private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers == ModifierKeys.Alt && e.Key == Key.M)
+        {
+            ToggleMinimalMode();
+            e.Handled = true;
+        }
+    }
+
+    private void OnMinimalModeClicked(object sender, RoutedEventArgs e) => ToggleMinimalMode();
+
+    private void OnMinimizeClicked(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnCloseClicked(object sender, RoutedEventArgs e) => Close();
+
+    private void ToggleMinimalMode()
+    {
+        if (!_settings.MinimalMode && WindowState == WindowState.Normal)
+            _normalBoundsBeforeMinimal = [Left, Top, Width, Height];
+        _settings.MinimalMode = !_settings.MinimalMode;
+        _settings.Save();
+        ApplyMinimalMode();
+        RefreshLanguageMenu();
+    }
+
+    private void OnWindowPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        bool moveMinimal = _settings.MinimalMode && e.ChangedButton == MouseButton.Left
+            && Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
+        bool moveNormal = !_settings.MinimalMode && e.ChangedButton == MouseButton.Left
+            && IsHeaderDragArea(e.OriginalSource as DependencyObject);
+        if (moveMinimal || moveNormal)
+        {
+            e.Handled = true;
+            try { DragMove(); }
+            catch (InvalidOperationException) { /* the press ended before the move began */ }
+        }
+    }
+
+    private bool IsHeaderDragArea(DependencyObject? element)
+    {
+        while (element is not null)
+        {
+            if (element is Button)
+                return false;
+            if (ReferenceEquals(element, Header))
+                return true;
+            element = VisualTreeHelper.GetParent(element) ?? LogicalTreeHelper.GetParent(element);
+        }
+        return false;
     }
 
     /// <summary>Reads <c>--diagnostic &lt;secondes&gt;</c>; zero means an ordinary run.</summary>
@@ -346,6 +401,7 @@ public partial class MainWindow : Window
         ApplyChassis();
         DarkenTitleBar();
         AddSystemMenu();
+        ApplyMinimalMode();
         PlaceWindow();
 
         Stage.Focus();
@@ -1844,9 +1900,12 @@ public partial class MainWindow : Window
     private const int MenuLanguageEnglish = 0x1010;
     private const int MenuLanguageFrench = 0x1020;
     private const int MenuShowSideButtons = 0x1030;
+    private const int MenuMinimalMode = 0x1040;
     private const int WmSysCommand = 0x0112;
+    private const int WmSizing = 0x0214;
     private const uint MfString = 0x0000, MfSeparator = 0x0800, MfByCommand = 0x0000;
     private const uint MfUnchecked = 0x0000, MfChecked = 0x0008;
+    private const double MinimalAspect = 1320.0 / 2868.0;
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetSystemMenu(IntPtr window, bool revert);
@@ -1859,6 +1918,12 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern uint CheckMenuItem(IntPtr menu, uint id, uint check);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int ellipseWidth, int ellipseHeight);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr window, IntPtr region, bool redraw);
 
     private IntPtr _systemMenu;
 
@@ -1884,6 +1949,7 @@ public partial class MainWindow : Window
 
         AppendMenuW(_systemMenu, MfSeparator, UIntPtr.Zero, null);
         AppendMenuW(_systemMenu, MfString, (UIntPtr)MenuShowSideButtons, T.MenuShowSideButtons);
+        AppendMenuW(_systemMenu, MfString, (UIntPtr)MenuMinimalMode, "Mode minimal");
         AppendMenuW(_systemMenu, MfSeparator, UIntPtr.Zero, null);
         AppendMenuW(_systemMenu, MfString, (UIntPtr)MenuLanguageAuto, T.MenuLanguageAuto);
         AppendMenuW(_systemMenu, MfString, (UIntPtr)MenuLanguageEnglish, "English");
@@ -1901,6 +1967,9 @@ public partial class MainWindow : Window
         string setting = LanguageSetting(_settings.Language);
         ModifyMenuW(_systemMenu, MenuShowSideButtons, MfByCommand | MfString,
             (UIntPtr)MenuShowSideButtons, T.MenuShowSideButtons);
+        ModifyMenuW(_systemMenu, MenuMinimalMode, MfByCommand | MfString,
+            (UIntPtr)MenuMinimalMode, LanguageSetting(_settings.Language) == "en" ? "Minimal mode" : "Mode minimal");
+        CheckMenuItem(_systemMenu, MenuMinimalMode, MfByCommand | (_settings.MinimalMode ? MfChecked : MfUnchecked));
         ModifyMenuW(_systemMenu, MenuLanguageAuto, MfByCommand | MfString,
             (UIntPtr)MenuLanguageAuto, T.MenuLanguageAuto);
         CheckMenuItem(_systemMenu, MenuLanguageAuto, MfByCommand | (setting == "auto" ? MfChecked : MfUnchecked));
@@ -1919,12 +1988,26 @@ public partial class MainWindow : Window
 
     private IntPtr OnWindowMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (message == WmSizing && _settings.MinimalMode && lParam != IntPtr.Zero)
+        {
+            ConstrainMinimalResize((int)wParam, lParam);
+            handled = true;
+            return (IntPtr)1;
+        }
+
         if (message != WmSysCommand)
             return IntPtr.Zero;
 
         if ((int)(wParam.ToInt64() & 0xFFF0) == MenuShowSideButtons)
         {
             ShowSideButtonsHint();
+            handled = true;
+            return IntPtr.Zero;
+        }
+
+        if ((int)(wParam.ToInt64() & 0xFFF0) == MenuMinimalMode)
+        {
+            ToggleMinimalMode();
             handled = true;
             return IntPtr.Zero;
         }
@@ -1942,6 +2025,40 @@ public partial class MainWindow : Window
             handled = true;
         }
         return IntPtr.Zero;
+    }
+
+    private void ConstrainMinimalResize(int edge, IntPtr rectanglePointer)
+    {
+        NativeRect rect = Marshal.PtrToStructure<NativeRect>(rectanglePointer);
+        int width = Math.Max(1, rect.Right - rect.Left);
+        int height = Math.Max(1, rect.Bottom - rect.Top);
+
+        // Side handles drive width; top/bottom handles drive height. Corner
+        // handles use the larger delta and keep the opposite corner anchored.
+        bool horizontalEdge = edge is 1 or 2;
+        bool verticalEdge = edge is 3 or 6;
+        var transform = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice;
+        int currentWidth = (int)Math.Round(ActualWidth * (transform?.M11 ?? 1));
+        int currentHeight = (int)Math.Round(ActualHeight * (transform?.M22 ?? 1));
+        bool cornerUsesWidth = !horizontalEdge && !verticalEdge
+            && Math.Abs(width - currentWidth) >= Math.Abs(height - currentHeight) * MinimalAspect;
+        if (horizontalEdge || cornerUsesWidth)
+            height = Math.Max(1, (int)Math.Round(width / MinimalAspect));
+        else
+            width = Math.Max(1, (int)Math.Round(height * MinimalAspect));
+
+        switch (edge)
+        {
+            case 1: rect.Left = rect.Right - width; rect.Bottom = rect.Top + height; break; // left
+            case 2: rect.Right = rect.Left + width; rect.Bottom = rect.Top + height; break; // right
+            case 3: rect.Top = rect.Bottom - height; rect.Right = rect.Left + width; break; // top
+            case 4: rect.Left = rect.Right - width; rect.Top = rect.Bottom - height; break; // top-left
+            case 5: rect.Right = rect.Left + width; rect.Top = rect.Bottom - height; break; // top-right
+            case 6: rect.Bottom = rect.Top + height; rect.Right = rect.Left + width; break; // bottom
+            case 7: rect.Left = rect.Right - width; rect.Bottom = rect.Top + height; break; // bottom-left
+            case 8: rect.Right = rect.Left + width; rect.Bottom = rect.Top + height; break; // bottom-right
+        }
+        Marshal.StructureToPtr(rect, rectanglePointer, false);
     }
 
     /// <summary>
@@ -1974,7 +2091,77 @@ public partial class MainWindow : Window
             ? 1
             : Screen.ActualWidth / _surfaceWidth;
 
-    private void OnStageSizeChanged(object sender, SizeChangedEventArgs e) => FitDevice();
+    private void OnStageSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        FitDevice();
+        UpdateMinimalWindowRegion();
+    }
+
+    private void ApplyMinimalMode()
+    {
+        bool minimal = _settings.MinimalMode;
+        double oldWidth = Width, oldHeight = Height;
+        double contentHeight = Stage.ActualHeight;
+        Header.Visibility = minimal ? Visibility.Collapsed : Visibility.Visible;
+        CommandBar.Visibility = minimal ? Visibility.Collapsed : Visibility.Visible;
+        HeaderRow.Height = minimal ? new GridLength(0) : new GridLength(64);
+        FooterRow.Height = minimal ? new GridLength(0) : GridLength.Auto;
+        Stage.Margin = minimal ? new Thickness(0) : new Thickness(8, 4, 8, 8);
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.CanResize;
+        Background = minimal ? Brushes.Transparent : (Brush)FindResource("Surface");
+        if (minimal)
+        {
+            Shadow.Visibility = Visibility.Collapsed;
+            Rail.Visibility = Visibility.Collapsed;
+            BtnAction.Visibility = BtnVolUp.Visibility = BtnVolDn.Visibility = BtnSide.Visibility = BtnCamera.Visibility = Visibility.Collapsed;
+            HitAction.Visibility = HitVolUp.Visibility = HitVolDn.Visibility = HitSide.Visibility = Visibility.Collapsed;
+            Glass.Visibility = Visibility.Collapsed;
+            Island.Visibility = Visibility.Collapsed;
+            Bezel.Margin = new Thickness(0);
+        }
+        if (minimal && IsLoaded && contentHeight > 1)
+        {
+            Height = Math.Max(MinHeight, contentHeight);
+            Width = Height * (1320.0 / 2868.0);
+            Left += (oldWidth - Width) / 2;
+            Top += (oldHeight - Height) / 2;
+        }
+        else if (!minimal && (_normalBoundsBeforeMinimal ?? _settings.WindowBounds) is { Length: 4 } bounds
+                 && bounds[2] > MinWidth && bounds[3] > MinHeight)
+        {
+            Left = bounds[0];
+            Top = bounds[1];
+            Width = bounds[2];
+            Height = bounds[3];
+            _normalBoundsBeforeMinimal = null;
+        }
+        if (_border > 0)
+            FitDevice();
+        UpdateMinimalWindowRegion();
+    }
+
+    private void UpdateMinimalWindowRegion()
+    {
+        IntPtr handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+            return;
+        if (!_settings.MinimalMode)
+        {
+            SetWindowRgn(handle, IntPtr.Zero, true);
+            return;
+        }
+
+        var transform = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice;
+        double scaleX = transform?.M11 ?? 1;
+        double scaleY = transform?.M22 ?? 1;
+        int width = Math.Max(1, (int)Math.Ceiling(ActualWidth * scaleX));
+        int height = Math.Max(1, (int)Math.Ceiling(ActualHeight * scaleY));
+        int diameter = Math.Max(1, (int)Math.Ceiling(width * 0.282));
+        IntPtr region = CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter);
+        if (region != IntPtr.Zero)
+            SetWindowRgn(handle, region, true);
+    }
 
     /// <summary>Takes a detected orientation and re-lays the chassis around it.</summary>
     private void AdoptOrientation(DeviceGeometry.Orientation seen)
@@ -2107,6 +2294,17 @@ public partial class MainWindow : Window
     {
         var work = WorkArea();
 
+        if (_settings.MinimalMode)
+        {
+            const double PhoneWidth = 1320, PhoneHeight = 2868;
+            double minimalFit = Math.Min(1.0, Math.Min((work.Width - 8) / PhoneWidth, (work.Height - 8) / PhoneHeight));
+            Width = PhoneWidth * minimalFit;
+            Height = PhoneHeight * minimalFit;
+            Left = work.Left + (work.Width - Width) / 2;
+            Top = work.Top + (work.Height - Height) / 2;
+            return;
+        }
+
         if (_settings.WindowBounds.Length == 4)
         {
             double[] saved = _settings.WindowBounds;
@@ -2175,7 +2373,7 @@ public partial class MainWindow : Window
         // with the panel still open would otherwise lose the last slider moved.
         CloseAudioPanel();
 
-        if (WindowState == WindowState.Normal)
+        if (WindowState == WindowState.Normal && !_settings.MinimalMode)
         {
             _settings.WindowBounds = [Left, Top, Width, Height];
             _settings.Save();
@@ -2223,6 +2421,28 @@ public partial class MainWindow : Window
         double shortSide = Math.Min(width, height);
         double border = _border = DeviceGeometry.Border * shortSide;
         double screenRadius = DeviceGeometry.ScreenRadius * shortSide;
+
+        if (_settings.MinimalMode)
+        {
+            Device.Width = width;
+            Device.Height = height;
+            Shadow.Visibility = Visibility.Collapsed;
+            Rail.Visibility = Visibility.Collapsed;
+            BtnAction.Visibility = BtnVolUp.Visibility = BtnVolDn.Visibility = BtnSide.Visibility = BtnCamera.Visibility = Visibility.Collapsed;
+            HitAction.Visibility = HitVolUp.Visibility = HitVolDn.Visibility = HitSide.Visibility = Visibility.Collapsed;
+            Glass.Visibility = Visibility.Collapsed;
+            Bezel.Margin = new Thickness(0);
+            Bezel.Clip = new RectangleGeometry(new Rect(0, 0, width, height), screenRadius, screenRadius);
+            Island.Visibility = Visibility.Collapsed;
+            ShapeButtons(border);
+            ChooseScaling(width);
+            DrawPointer();
+            return;
+        }
+
+        Shadow.Visibility = Rail.Visibility = BtnAction.Visibility = BtnVolUp.Visibility = BtnVolDn.Visibility = BtnSide.Visibility = BtnCamera.Visibility = Visibility.Visible;
+        HitAction.Visibility = HitVolUp.Visibility = HitVolDn.Visibility = HitSide.Visibility = Visibility.Visible;
+        Glass.Visibility = Visibility.Visible;
 
         Device.Width = width + 2 * border;
         Device.Height = height + 2 * border;

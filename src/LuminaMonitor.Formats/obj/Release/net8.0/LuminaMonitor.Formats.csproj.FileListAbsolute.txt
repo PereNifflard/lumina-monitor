@@ -1,0 +1,12 @@
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\bin\Release\net8.0\LuminaMonitor.Formats.deps.json
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\bin\Release\net8.0\LuminaMonitor.Formats.dll
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\bin\Release\net8.0\LuminaMonitor.Formats.pdb
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\obj\Release\net8.0\LuminaMonitor.Formats.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\obj\Release\net8.0\LuminaMonitor.Formats.AssemblyInfoInputs.cache
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\obj\Release\net8.0\LuminaMonitor.Formats.AssemblyInfo.cs
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\obj\Release\net8.0\LuminaMonitor.Formats.csproj.CoreCompileInputs.cache
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\obj\Release\net8.0\LuminaMonitor.Formats.dll
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\obj\Release\net8.0\refint\LuminaMonitor.Formats.dll
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\obj\Release\net8.0\LuminaMonitor.Formats.pdb
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\obj\Release\net8.0\ref\LuminaMonitor.Formats.dll
+C:\Users\gamme\Desktop\lumina-monitor-main\src\LuminaMonitor.Formats\obj\Release\net8.0\LuminaMo.2957AC7A.Up2Date
